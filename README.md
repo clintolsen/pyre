@@ -60,17 +60,17 @@ containing the PLY sources.
 
 You can fetch a pinned version of PLY into `ply/` by running:
 
-```bash scripts/get_ply.sh```
+```❯ bash scripts/get_ply.sh```
 
 ---
 
 ## Command Line Usage
 
-    ./pyre 'regex' filename
+  pyre [-h] [--debug] regex target
 
 Example:
 
-    ./pyre 'lex' test.cpp
+  ```❯ ./pyre 'lex' test.cpp```
 
 ---
 
@@ -128,5 +128,5 @@ SOFTWARE.
 ## Acknowledgements
 
 Thanks to **Russ Cox** ([swtch.com](https://swtch.com)) for his writing on
-regular-expression theory, and his personal comments which encouraged me to
+regular-expressions, finite automata, and his personal comments which encouraged me to
 explore a derivative-based implementation.
