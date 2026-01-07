@@ -66,11 +66,11 @@ You can fetch a pinned version of PLY into `ply/` by running:
 
 ## Command Line Usage
 
-  pyre [-h] [--debug] regex target
+  ```pyre [-h] [--debug] regex target```
 
 Example:
 
-  ```❯ ./pyre 'lex' test.cpp```
+  ```❯ pyre 'lex' test.cpp```
 
 ---
 
