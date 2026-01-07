@@ -47,14 +47,18 @@ The project includes:
 
 ## Installation
 
+## Installation
+
 Requires **Python 3.8+** and **PLY**.
 
-To install PLY:
+### Installing PLY
 
-This project uses [PLY](https://www.dabeaz.com/ply/) (Python Lex-Yacc), which is
-no longer distributed via package managers. [oai_citation:1‡GitHub](https://github.com/dabeaz/ply)
+This project uses [PLY](https://www.dabeaz.com/ply/) (Python Lex–Yacc).
+PLY is no longer actively distributed via PyPI, so it is not installed as a
+package dependency. Instead, this project expects a local `ply/` directory
+containing the PLY sources.
 
-To fetch it locally into the `ply/` directory, run:
+You can fetch a pinned version of PLY into `ply/` by running:
 
 ```bash scripts/get_ply.sh```
 
