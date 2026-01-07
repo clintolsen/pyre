@@ -1,0 +1,1082 @@
+Created by PLY (http://www.dabeaz.com/ply)
+
+Grammar
+
+Rule 0     S' -> expression
+Rule 1     expression -> expression AND expression
+Rule 2     expression -> expression OR expression
+Rule 3     expression -> expression MINUS expression
+Rule 4     expression -> expression CARET expression
+Rule 5     expression -> NOT expression
+Rule 6     expression -> concat
+Rule 7     concat -> concat expression
+Rule 8     concat -> primary
+Rule 9     primary -> primary STAR
+Rule 10    primary -> primary PLUS
+Rule 11    primary -> primary QMARK
+Rule 12    primary -> primary LCURLY rspec RCURLY
+Rule 13    primary -> DIGITS
+Rule 14    primary -> literal
+Rule 15    primary -> LPAREN expression RPAREN
+Rule 16    primary -> LSQUARE opt_caret ranges RSQUARE
+Rule 17    opt_caret -> CARET
+Rule 18    opt_caret -> <empty>
+Rule 19    ranges -> ranges range
+Rule 20    ranges -> range
+Rule 21    range -> ID
+Rule 22    range -> ID MINUS ID
+Rule 23    literal -> DOT
+Rule 24    literal -> ID
+Rule 25    literal -> ESCAPED
+Rule 26    literal -> EPSILON
+Rule 27    rspec -> INTEGER
+Rule 28    rspec -> INTEGER COMMA
+Rule 29    rspec -> COMMA INTEGER
+Rule 30    rspec -> INTEGER COMMA INTEGER
+
+Terminals, with rules where they appear
+
+AND                  : 1
+CARET                : 4 17
+COMMA                : 28 29 30
+DIGITS               : 13
+DOT                  : 23
+EPSILON              : 26
+ESCAPED              : 25
+ID                   : 21 22 22 24
+INTEGER              : 27 28 29 30 30
+LCURLY               : 12
+LPAREN               : 15
+LSQUARE              : 16
+MINUS                : 3 22
+NOT                  : 5
+OR                   : 2
+PLUS                 : 10
+QMARK                : 11
+RCURLY               : 12
+RPAREN               : 15
+RSQUARE              : 16
+STAR                 : 9
+error                : 
+
+Nonterminals, with rules where they appear
+
+concat               : 6 7
+expression           : 1 1 2 2 3 3 4 4 5 7 15 0
+literal              : 14
+opt_caret            : 16
+primary              : 8 9 10 11 12
+range                : 19 20
+ranges               : 16 19
+rspec                : 12
+
+
+state 0
+
+    (0) S' -> . expression
+    (1) expression -> . expression AND expression
+    (2) expression -> . expression OR expression
+    (3) expression -> . expression MINUS expression
+    (4) expression -> . expression CARET expression
+    (5) expression -> . NOT expression
+    (6) expression -> . concat
+    (7) concat -> . concat expression
+    (8) concat -> . primary
+    (9) primary -> . primary STAR
+    (10) primary -> . primary PLUS
+    (11) primary -> . primary QMARK
+    (12) primary -> . primary LCURLY rspec RCURLY
+    (13) primary -> . DIGITS
+    (14) primary -> . literal
+    (15) primary -> . LPAREN expression RPAREN
+    (16) primary -> . LSQUARE opt_caret ranges RSQUARE
+    (23) literal -> . DOT
+    (24) literal -> . ID
+    (25) literal -> . ESCAPED
+    (26) literal -> . EPSILON
+
+    NOT             shift and go to state 2
+    DIGITS          shift and go to state 5
+    LPAREN          shift and go to state 7
+    LSQUARE         shift and go to state 8
+    DOT             shift and go to state 9
+    ID              shift and go to state 10
+    ESCAPED         shift and go to state 11
+    EPSILON         shift and go to state 12
+
+    expression                     shift and go to state 1
+    concat                         shift and go to state 3
+    primary                        shift and go to state 4
+    literal                        shift and go to state 6
+
+state 1
+
+    (0) S' -> expression .
+    (1) expression -> expression . AND expression
+    (2) expression -> expression . OR expression
+    (3) expression -> expression . MINUS expression
+    (4) expression -> expression . CARET expression
+
+    AND             shift and go to state 13
+    OR              shift and go to state 14
+    MINUS           shift and go to state 15
+    CARET           shift and go to state 16
+
+
+state 2
+
+    (5) expression -> NOT . expression
+    (1) expression -> . expression AND expression
+    (2) expression -> . expression OR expression
+    (3) expression -> . expression MINUS expression
+    (4) expression -> . expression CARET expression
+    (5) expression -> . NOT expression
+    (6) expression -> . concat
+    (7) concat -> . concat expression
+    (8) concat -> . primary
+    (9) primary -> . primary STAR
+    (10) primary -> . primary PLUS
+    (11) primary -> . primary QMARK
+    (12) primary -> . primary LCURLY rspec RCURLY
+    (13) primary -> . DIGITS
+    (14) primary -> . literal
+    (15) primary -> . LPAREN expression RPAREN
+    (16) primary -> . LSQUARE opt_caret ranges RSQUARE
+    (23) literal -> . DOT
+    (24) literal -> . ID
+    (25) literal -> . ESCAPED
+    (26) literal -> . EPSILON
+
+    NOT             shift and go to state 2
+    DIGITS          shift and go to state 5
+    LPAREN          shift and go to state 7
+    LSQUARE         shift and go to state 8
+    DOT             shift and go to state 9
+    ID              shift and go to state 10
+    ESCAPED         shift and go to state 11
+    EPSILON         shift and go to state 12
+
+    expression                     shift and go to state 17
+    concat                         shift and go to state 3
+    primary                        shift and go to state 4
+    literal                        shift and go to state 6
+
+state 3
+
+    (6) expression -> concat .
+    (7) concat -> concat . expression
+    (1) expression -> . expression AND expression
+    (2) expression -> . expression OR expression
+    (3) expression -> . expression MINUS expression
+    (4) expression -> . expression CARET expression
+    (5) expression -> . NOT expression
+    (6) expression -> . concat
+    (7) concat -> . concat expression
+    (8) concat -> . primary
+    (9) primary -> . primary STAR
+    (10) primary -> . primary PLUS
+    (11) primary -> . primary QMARK
+    (12) primary -> . primary LCURLY rspec RCURLY
+    (13) primary -> . DIGITS
+    (14) primary -> . literal
+    (15) primary -> . LPAREN expression RPAREN
+    (16) primary -> . LSQUARE opt_caret ranges RSQUARE
+    (23) literal -> . DOT
+    (24) literal -> . ID
+    (25) literal -> . ESCAPED
+    (26) literal -> . EPSILON
+
+  ! shift/reduce conflict for NOT resolved as shift
+  ! shift/reduce conflict for DIGITS resolved as shift
+  ! shift/reduce conflict for LPAREN resolved as shift
+  ! shift/reduce conflict for LSQUARE resolved as shift
+  ! shift/reduce conflict for DOT resolved as shift
+  ! shift/reduce conflict for ID resolved as shift
+  ! shift/reduce conflict for ESCAPED resolved as shift
+  ! shift/reduce conflict for EPSILON resolved as shift
+    AND             reduce using rule 6 (expression -> concat .)
+    OR              reduce using rule 6 (expression -> concat .)
+    MINUS           reduce using rule 6 (expression -> concat .)
+    CARET           reduce using rule 6 (expression -> concat .)
+    $end            reduce using rule 6 (expression -> concat .)
+    RPAREN          reduce using rule 6 (expression -> concat .)
+    NOT             shift and go to state 2
+    DIGITS          shift and go to state 5
+    LPAREN          shift and go to state 7
+    LSQUARE         shift and go to state 8
+    DOT             shift and go to state 9
+    ID              shift and go to state 10
+    ESCAPED         shift and go to state 11
+    EPSILON         shift and go to state 12
+
+  ! NOT             [ reduce using rule 6 (expression -> concat .) ]
+  ! DIGITS          [ reduce using rule 6 (expression -> concat .) ]
+  ! LPAREN          [ reduce using rule 6 (expression -> concat .) ]
+  ! LSQUARE         [ reduce using rule 6 (expression -> concat .) ]
+  ! DOT             [ reduce using rule 6 (expression -> concat .) ]
+  ! ID              [ reduce using rule 6 (expression -> concat .) ]
+  ! ESCAPED         [ reduce using rule 6 (expression -> concat .) ]
+  ! EPSILON         [ reduce using rule 6 (expression -> concat .) ]
+
+    concat                         shift and go to state 3
+    expression                     shift and go to state 18
+    primary                        shift and go to state 4
+    literal                        shift and go to state 6
+
+state 4
+
+    (8) concat -> primary .
+    (9) primary -> primary . STAR
+    (10) primary -> primary . PLUS
+    (11) primary -> primary . QMARK
+    (12) primary -> primary . LCURLY rspec RCURLY
+
+    NOT             reduce using rule 8 (concat -> primary .)
+    DIGITS          reduce using rule 8 (concat -> primary .)
+    LPAREN          reduce using rule 8 (concat -> primary .)
+    LSQUARE         reduce using rule 8 (concat -> primary .)
+    DOT             reduce using rule 8 (concat -> primary .)
+    ID              reduce using rule 8 (concat -> primary .)
+    ESCAPED         reduce using rule 8 (concat -> primary .)
+    EPSILON         reduce using rule 8 (concat -> primary .)
+    AND             reduce using rule 8 (concat -> primary .)
+    OR              reduce using rule 8 (concat -> primary .)
+    MINUS           reduce using rule 8 (concat -> primary .)
+    CARET           reduce using rule 8 (concat -> primary .)
+    $end            reduce using rule 8 (concat -> primary .)
+    RPAREN          reduce using rule 8 (concat -> primary .)
+    STAR            shift and go to state 19
+    PLUS            shift and go to state 20
+    QMARK           shift and go to state 21
+    LCURLY          shift and go to state 22
+
+
+state 5
+
+    (13) primary -> DIGITS .
+
+    STAR            reduce using rule 13 (primary -> DIGITS .)
+    PLUS            reduce using rule 13 (primary -> DIGITS .)
+    QMARK           reduce using rule 13 (primary -> DIGITS .)
+    LCURLY          reduce using rule 13 (primary -> DIGITS .)
+    NOT             reduce using rule 13 (primary -> DIGITS .)
+    DIGITS          reduce using rule 13 (primary -> DIGITS .)
+    LPAREN          reduce using rule 13 (primary -> DIGITS .)
+    LSQUARE         reduce using rule 13 (primary -> DIGITS .)
+    DOT             reduce using rule 13 (primary -> DIGITS .)
+    ID              reduce using rule 13 (primary -> DIGITS .)
+    ESCAPED         reduce using rule 13 (primary -> DIGITS .)
+    EPSILON         reduce using rule 13 (primary -> DIGITS .)
+    AND             reduce using rule 13 (primary -> DIGITS .)
+    OR              reduce using rule 13 (primary -> DIGITS .)
+    MINUS           reduce using rule 13 (primary -> DIGITS .)
+    CARET           reduce using rule 13 (primary -> DIGITS .)
+    $end            reduce using rule 13 (primary -> DIGITS .)
+    RPAREN          reduce using rule 13 (primary -> DIGITS .)
+
+
+state 6
+
+    (14) primary -> literal .
+
+    STAR            reduce using rule 14 (primary -> literal .)
+    PLUS            reduce using rule 14 (primary -> literal .)
+    QMARK           reduce using rule 14 (primary -> literal .)
+    LCURLY          reduce using rule 14 (primary -> literal .)
+    NOT             reduce using rule 14 (primary -> literal .)
+    DIGITS          reduce using rule 14 (primary -> literal .)
+    LPAREN          reduce using rule 14 (primary -> literal .)
+    LSQUARE         reduce using rule 14 (primary -> literal .)
+    DOT             reduce using rule 14 (primary -> literal .)
+    ID              reduce using rule 14 (primary -> literal .)
+    ESCAPED         reduce using rule 14 (primary -> literal .)
+    EPSILON         reduce using rule 14 (primary -> literal .)
+    AND             reduce using rule 14 (primary -> literal .)
+    OR              reduce using rule 14 (primary -> literal .)
+    MINUS           reduce using rule 14 (primary -> literal .)
+    CARET           reduce using rule 14 (primary -> literal .)
+    $end            reduce using rule 14 (primary -> literal .)
+    RPAREN          reduce using rule 14 (primary -> literal .)
+
+
+state 7
+
+    (15) primary -> LPAREN . expression RPAREN
+    (1) expression -> . expression AND expression
+    (2) expression -> . expression OR expression
+    (3) expression -> . expression MINUS expression
+    (4) expression -> . expression CARET expression
+    (5) expression -> . NOT expression
+    (6) expression -> . concat
+    (7) concat -> . concat expression
+    (8) concat -> . primary
+    (9) primary -> . primary STAR
+    (10) primary -> . primary PLUS
+    (11) primary -> . primary QMARK
+    (12) primary -> . primary LCURLY rspec RCURLY
+    (13) primary -> . DIGITS
+    (14) primary -> . literal
+    (15) primary -> . LPAREN expression RPAREN
+    (16) primary -> . LSQUARE opt_caret ranges RSQUARE
+    (23) literal -> . DOT
+    (24) literal -> . ID
+    (25) literal -> . ESCAPED
+    (26) literal -> . EPSILON
+
+    NOT             shift and go to state 2
+    DIGITS          shift and go to state 5
+    LPAREN          shift and go to state 7
+    LSQUARE         shift and go to state 8
+    DOT             shift and go to state 9
+    ID              shift and go to state 10
+    ESCAPED         shift and go to state 11
+    EPSILON         shift and go to state 12
+
+    expression                     shift and go to state 23
+    concat                         shift and go to state 3
+    primary                        shift and go to state 4
+    literal                        shift and go to state 6
+
+state 8
+
+    (16) primary -> LSQUARE . opt_caret ranges RSQUARE
+    (17) opt_caret -> . CARET
+    (18) opt_caret -> .
+
+    CARET           shift and go to state 25
+    ID              reduce using rule 18 (opt_caret -> .)
+
+    opt_caret                      shift and go to state 24
+
+state 9
+
+    (23) literal -> DOT .
+
+    STAR            reduce using rule 23 (literal -> DOT .)
+    PLUS            reduce using rule 23 (literal -> DOT .)
+    QMARK           reduce using rule 23 (literal -> DOT .)
+    LCURLY          reduce using rule 23 (literal -> DOT .)
+    NOT             reduce using rule 23 (literal -> DOT .)
+    DIGITS          reduce using rule 23 (literal -> DOT .)
+    LPAREN          reduce using rule 23 (literal -> DOT .)
+    LSQUARE         reduce using rule 23 (literal -> DOT .)
+    DOT             reduce using rule 23 (literal -> DOT .)
+    ID              reduce using rule 23 (literal -> DOT .)
+    ESCAPED         reduce using rule 23 (literal -> DOT .)
+    EPSILON         reduce using rule 23 (literal -> DOT .)
+    AND             reduce using rule 23 (literal -> DOT .)
+    OR              reduce using rule 23 (literal -> DOT .)
+    MINUS           reduce using rule 23 (literal -> DOT .)
+    CARET           reduce using rule 23 (literal -> DOT .)
+    $end            reduce using rule 23 (literal -> DOT .)
+    RPAREN          reduce using rule 23 (literal -> DOT .)
+
+
+state 10
+
+    (24) literal -> ID .
+
+    STAR            reduce using rule 24 (literal -> ID .)
+    PLUS            reduce using rule 24 (literal -> ID .)
+    QMARK           reduce using rule 24 (literal -> ID .)
+    LCURLY          reduce using rule 24 (literal -> ID .)
+    NOT             reduce using rule 24 (literal -> ID .)
+    DIGITS          reduce using rule 24 (literal -> ID .)
+    LPAREN          reduce using rule 24 (literal -> ID .)
+    LSQUARE         reduce using rule 24 (literal -> ID .)
+    DOT             reduce using rule 24 (literal -> ID .)
+    ID              reduce using rule 24 (literal -> ID .)
+    ESCAPED         reduce using rule 24 (literal -> ID .)
+    EPSILON         reduce using rule 24 (literal -> ID .)
+    AND             reduce using rule 24 (literal -> ID .)
+    OR              reduce using rule 24 (literal -> ID .)
+    MINUS           reduce using rule 24 (literal -> ID .)
+    CARET           reduce using rule 24 (literal -> ID .)
+    $end            reduce using rule 24 (literal -> ID .)
+    RPAREN          reduce using rule 24 (literal -> ID .)
+
+
+state 11
+
+    (25) literal -> ESCAPED .
+
+    STAR            reduce using rule 25 (literal -> ESCAPED .)
+    PLUS            reduce using rule 25 (literal -> ESCAPED .)
+    QMARK           reduce using rule 25 (literal -> ESCAPED .)
+    LCURLY          reduce using rule 25 (literal -> ESCAPED .)
+    NOT             reduce using rule 25 (literal -> ESCAPED .)
+    DIGITS          reduce using rule 25 (literal -> ESCAPED .)
+    LPAREN          reduce using rule 25 (literal -> ESCAPED .)
+    LSQUARE         reduce using rule 25 (literal -> ESCAPED .)
+    DOT             reduce using rule 25 (literal -> ESCAPED .)
+    ID              reduce using rule 25 (literal -> ESCAPED .)
+    ESCAPED         reduce using rule 25 (literal -> ESCAPED .)
+    EPSILON         reduce using rule 25 (literal -> ESCAPED .)
+    AND             reduce using rule 25 (literal -> ESCAPED .)
+    OR              reduce using rule 25 (literal -> ESCAPED .)
+    MINUS           reduce using rule 25 (literal -> ESCAPED .)
+    CARET           reduce using rule 25 (literal -> ESCAPED .)
+    $end            reduce using rule 25 (literal -> ESCAPED .)
+    RPAREN          reduce using rule 25 (literal -> ESCAPED .)
+
+
+state 12
+
+    (26) literal -> EPSILON .
+
+    STAR            reduce using rule 26 (literal -> EPSILON .)
+    PLUS            reduce using rule 26 (literal -> EPSILON .)
+    QMARK           reduce using rule 26 (literal -> EPSILON .)
+    LCURLY          reduce using rule 26 (literal -> EPSILON .)
+    NOT             reduce using rule 26 (literal -> EPSILON .)
+    DIGITS          reduce using rule 26 (literal -> EPSILON .)
+    LPAREN          reduce using rule 26 (literal -> EPSILON .)
+    LSQUARE         reduce using rule 26 (literal -> EPSILON .)
+    DOT             reduce using rule 26 (literal -> EPSILON .)
+    ID              reduce using rule 26 (literal -> EPSILON .)
+    ESCAPED         reduce using rule 26 (literal -> EPSILON .)
+    EPSILON         reduce using rule 26 (literal -> EPSILON .)
+    AND             reduce using rule 26 (literal -> EPSILON .)
+    OR              reduce using rule 26 (literal -> EPSILON .)
+    MINUS           reduce using rule 26 (literal -> EPSILON .)
+    CARET           reduce using rule 26 (literal -> EPSILON .)
+    $end            reduce using rule 26 (literal -> EPSILON .)
+    RPAREN          reduce using rule 26 (literal -> EPSILON .)
+
+
+state 13
+
+    (1) expression -> expression AND . expression
+    (1) expression -> . expression AND expression
+    (2) expression -> . expression OR expression
+    (3) expression -> . expression MINUS expression
+    (4) expression -> . expression CARET expression
+    (5) expression -> . NOT expression
+    (6) expression -> . concat
+    (7) concat -> . concat expression
+    (8) concat -> . primary
+    (9) primary -> . primary STAR
+    (10) primary -> . primary PLUS
+    (11) primary -> . primary QMARK
+    (12) primary -> . primary LCURLY rspec RCURLY
+    (13) primary -> . DIGITS
+    (14) primary -> . literal
+    (15) primary -> . LPAREN expression RPAREN
+    (16) primary -> . LSQUARE opt_caret ranges RSQUARE
+    (23) literal -> . DOT
+    (24) literal -> . ID
+    (25) literal -> . ESCAPED
+    (26) literal -> . EPSILON
+
+    NOT             shift and go to state 2
+    DIGITS          shift and go to state 5
+    LPAREN          shift and go to state 7
+    LSQUARE         shift and go to state 8
+    DOT             shift and go to state 9
+    ID              shift and go to state 10
+    ESCAPED         shift and go to state 11
+    EPSILON         shift and go to state 12
+
+    expression                     shift and go to state 26
+    concat                         shift and go to state 3
+    primary                        shift and go to state 4
+    literal                        shift and go to state 6
+
+state 14
+
+    (2) expression -> expression OR . expression
+    (1) expression -> . expression AND expression
+    (2) expression -> . expression OR expression
+    (3) expression -> . expression MINUS expression
+    (4) expression -> . expression CARET expression
+    (5) expression -> . NOT expression
+    (6) expression -> . concat
+    (7) concat -> . concat expression
+    (8) concat -> . primary
+    (9) primary -> . primary STAR
+    (10) primary -> . primary PLUS
+    (11) primary -> . primary QMARK
+    (12) primary -> . primary LCURLY rspec RCURLY
+    (13) primary -> . DIGITS
+    (14) primary -> . literal
+    (15) primary -> . LPAREN expression RPAREN
+    (16) primary -> . LSQUARE opt_caret ranges RSQUARE
+    (23) literal -> . DOT
+    (24) literal -> . ID
+    (25) literal -> . ESCAPED
+    (26) literal -> . EPSILON
+
+    NOT             shift and go to state 2
+    DIGITS          shift and go to state 5
+    LPAREN          shift and go to state 7
+    LSQUARE         shift and go to state 8
+    DOT             shift and go to state 9
+    ID              shift and go to state 10
+    ESCAPED         shift and go to state 11
+    EPSILON         shift and go to state 12
+
+    expression                     shift and go to state 27
+    concat                         shift and go to state 3
+    primary                        shift and go to state 4
+    literal                        shift and go to state 6
+
+state 15
+
+    (3) expression -> expression MINUS . expression
+    (1) expression -> . expression AND expression
+    (2) expression -> . expression OR expression
+    (3) expression -> . expression MINUS expression
+    (4) expression -> . expression CARET expression
+    (5) expression -> . NOT expression
+    (6) expression -> . concat
+    (7) concat -> . concat expression
+    (8) concat -> . primary
+    (9) primary -> . primary STAR
+    (10) primary -> . primary PLUS
+    (11) primary -> . primary QMARK
+    (12) primary -> . primary LCURLY rspec RCURLY
+    (13) primary -> . DIGITS
+    (14) primary -> . literal
+    (15) primary -> . LPAREN expression RPAREN
+    (16) primary -> . LSQUARE opt_caret ranges RSQUARE
+    (23) literal -> . DOT
+    (24) literal -> . ID
+    (25) literal -> . ESCAPED
+    (26) literal -> . EPSILON
+
+    NOT             shift and go to state 2
+    DIGITS          shift and go to state 5
+    LPAREN          shift and go to state 7
+    LSQUARE         shift and go to state 8
+    DOT             shift and go to state 9
+    ID              shift and go to state 10
+    ESCAPED         shift and go to state 11
+    EPSILON         shift and go to state 12
+
+    expression                     shift and go to state 28
+    concat                         shift and go to state 3
+    primary                        shift and go to state 4
+    literal                        shift and go to state 6
+
+state 16
+
+    (4) expression -> expression CARET . expression
+    (1) expression -> . expression AND expression
+    (2) expression -> . expression OR expression
+    (3) expression -> . expression MINUS expression
+    (4) expression -> . expression CARET expression
+    (5) expression -> . NOT expression
+    (6) expression -> . concat
+    (7) concat -> . concat expression
+    (8) concat -> . primary
+    (9) primary -> . primary STAR
+    (10) primary -> . primary PLUS
+    (11) primary -> . primary QMARK
+    (12) primary -> . primary LCURLY rspec RCURLY
+    (13) primary -> . DIGITS
+    (14) primary -> . literal
+    (15) primary -> . LPAREN expression RPAREN
+    (16) primary -> . LSQUARE opt_caret ranges RSQUARE
+    (23) literal -> . DOT
+    (24) literal -> . ID
+    (25) literal -> . ESCAPED
+    (26) literal -> . EPSILON
+
+    NOT             shift and go to state 2
+    DIGITS          shift and go to state 5
+    LPAREN          shift and go to state 7
+    LSQUARE         shift and go to state 8
+    DOT             shift and go to state 9
+    ID              shift and go to state 10
+    ESCAPED         shift and go to state 11
+    EPSILON         shift and go to state 12
+
+    expression                     shift and go to state 29
+    concat                         shift and go to state 3
+    primary                        shift and go to state 4
+    literal                        shift and go to state 6
+
+state 17
+
+    (5) expression -> NOT expression .
+    (1) expression -> expression . AND expression
+    (2) expression -> expression . OR expression
+    (3) expression -> expression . MINUS expression
+    (4) expression -> expression . CARET expression
+
+    AND             reduce using rule 5 (expression -> NOT expression .)
+    OR              reduce using rule 5 (expression -> NOT expression .)
+    MINUS           reduce using rule 5 (expression -> NOT expression .)
+    CARET           reduce using rule 5 (expression -> NOT expression .)
+    $end            reduce using rule 5 (expression -> NOT expression .)
+    NOT             reduce using rule 5 (expression -> NOT expression .)
+    DIGITS          reduce using rule 5 (expression -> NOT expression .)
+    LPAREN          reduce using rule 5 (expression -> NOT expression .)
+    LSQUARE         reduce using rule 5 (expression -> NOT expression .)
+    DOT             reduce using rule 5 (expression -> NOT expression .)
+    ID              reduce using rule 5 (expression -> NOT expression .)
+    ESCAPED         reduce using rule 5 (expression -> NOT expression .)
+    EPSILON         reduce using rule 5 (expression -> NOT expression .)
+    RPAREN          reduce using rule 5 (expression -> NOT expression .)
+
+  ! AND             [ shift and go to state 13 ]
+  ! OR              [ shift and go to state 14 ]
+  ! MINUS           [ shift and go to state 15 ]
+  ! CARET           [ shift and go to state 16 ]
+
+
+state 18
+
+    (7) concat -> concat expression .
+    (1) expression -> expression . AND expression
+    (2) expression -> expression . OR expression
+    (3) expression -> expression . MINUS expression
+    (4) expression -> expression . CARET expression
+
+  ! shift/reduce conflict for AND resolved as shift
+  ! shift/reduce conflict for OR resolved as shift
+  ! shift/reduce conflict for MINUS resolved as shift
+  ! shift/reduce conflict for CARET resolved as shift
+    NOT             reduce using rule 7 (concat -> concat expression .)
+    DIGITS          reduce using rule 7 (concat -> concat expression .)
+    LPAREN          reduce using rule 7 (concat -> concat expression .)
+    LSQUARE         reduce using rule 7 (concat -> concat expression .)
+    DOT             reduce using rule 7 (concat -> concat expression .)
+    ID              reduce using rule 7 (concat -> concat expression .)
+    ESCAPED         reduce using rule 7 (concat -> concat expression .)
+    EPSILON         reduce using rule 7 (concat -> concat expression .)
+    $end            reduce using rule 7 (concat -> concat expression .)
+    RPAREN          reduce using rule 7 (concat -> concat expression .)
+    AND             shift and go to state 13
+    OR              shift and go to state 14
+    MINUS           shift and go to state 15
+    CARET           shift and go to state 16
+
+  ! AND             [ reduce using rule 7 (concat -> concat expression .) ]
+  ! OR              [ reduce using rule 7 (concat -> concat expression .) ]
+  ! MINUS           [ reduce using rule 7 (concat -> concat expression .) ]
+  ! CARET           [ reduce using rule 7 (concat -> concat expression .) ]
+
+
+state 19
+
+    (9) primary -> primary STAR .
+
+    STAR            reduce using rule 9 (primary -> primary STAR .)
+    PLUS            reduce using rule 9 (primary -> primary STAR .)
+    QMARK           reduce using rule 9 (primary -> primary STAR .)
+    LCURLY          reduce using rule 9 (primary -> primary STAR .)
+    NOT             reduce using rule 9 (primary -> primary STAR .)
+    DIGITS          reduce using rule 9 (primary -> primary STAR .)
+    LPAREN          reduce using rule 9 (primary -> primary STAR .)
+    LSQUARE         reduce using rule 9 (primary -> primary STAR .)
+    DOT             reduce using rule 9 (primary -> primary STAR .)
+    ID              reduce using rule 9 (primary -> primary STAR .)
+    ESCAPED         reduce using rule 9 (primary -> primary STAR .)
+    EPSILON         reduce using rule 9 (primary -> primary STAR .)
+    AND             reduce using rule 9 (primary -> primary STAR .)
+    OR              reduce using rule 9 (primary -> primary STAR .)
+    MINUS           reduce using rule 9 (primary -> primary STAR .)
+    CARET           reduce using rule 9 (primary -> primary STAR .)
+    $end            reduce using rule 9 (primary -> primary STAR .)
+    RPAREN          reduce using rule 9 (primary -> primary STAR .)
+
+
+state 20
+
+    (10) primary -> primary PLUS .
+
+    STAR            reduce using rule 10 (primary -> primary PLUS .)
+    PLUS            reduce using rule 10 (primary -> primary PLUS .)
+    QMARK           reduce using rule 10 (primary -> primary PLUS .)
+    LCURLY          reduce using rule 10 (primary -> primary PLUS .)
+    NOT             reduce using rule 10 (primary -> primary PLUS .)
+    DIGITS          reduce using rule 10 (primary -> primary PLUS .)
+    LPAREN          reduce using rule 10 (primary -> primary PLUS .)
+    LSQUARE         reduce using rule 10 (primary -> primary PLUS .)
+    DOT             reduce using rule 10 (primary -> primary PLUS .)
+    ID              reduce using rule 10 (primary -> primary PLUS .)
+    ESCAPED         reduce using rule 10 (primary -> primary PLUS .)
+    EPSILON         reduce using rule 10 (primary -> primary PLUS .)
+    AND             reduce using rule 10 (primary -> primary PLUS .)
+    OR              reduce using rule 10 (primary -> primary PLUS .)
+    MINUS           reduce using rule 10 (primary -> primary PLUS .)
+    CARET           reduce using rule 10 (primary -> primary PLUS .)
+    $end            reduce using rule 10 (primary -> primary PLUS .)
+    RPAREN          reduce using rule 10 (primary -> primary PLUS .)
+
+
+state 21
+
+    (11) primary -> primary QMARK .
+
+    STAR            reduce using rule 11 (primary -> primary QMARK .)
+    PLUS            reduce using rule 11 (primary -> primary QMARK .)
+    QMARK           reduce using rule 11 (primary -> primary QMARK .)
+    LCURLY          reduce using rule 11 (primary -> primary QMARK .)
+    NOT             reduce using rule 11 (primary -> primary QMARK .)
+    DIGITS          reduce using rule 11 (primary -> primary QMARK .)
+    LPAREN          reduce using rule 11 (primary -> primary QMARK .)
+    LSQUARE         reduce using rule 11 (primary -> primary QMARK .)
+    DOT             reduce using rule 11 (primary -> primary QMARK .)
+    ID              reduce using rule 11 (primary -> primary QMARK .)
+    ESCAPED         reduce using rule 11 (primary -> primary QMARK .)
+    EPSILON         reduce using rule 11 (primary -> primary QMARK .)
+    AND             reduce using rule 11 (primary -> primary QMARK .)
+    OR              reduce using rule 11 (primary -> primary QMARK .)
+    MINUS           reduce using rule 11 (primary -> primary QMARK .)
+    CARET           reduce using rule 11 (primary -> primary QMARK .)
+    $end            reduce using rule 11 (primary -> primary QMARK .)
+    RPAREN          reduce using rule 11 (primary -> primary QMARK .)
+
+
+state 22
+
+    (12) primary -> primary LCURLY . rspec RCURLY
+    (27) rspec -> . INTEGER
+    (28) rspec -> . INTEGER COMMA
+    (29) rspec -> . COMMA INTEGER
+    (30) rspec -> . INTEGER COMMA INTEGER
+
+    INTEGER         shift and go to state 31
+    COMMA           shift and go to state 32
+
+    rspec                          shift and go to state 30
+
+state 23
+
+    (15) primary -> LPAREN expression . RPAREN
+    (1) expression -> expression . AND expression
+    (2) expression -> expression . OR expression
+    (3) expression -> expression . MINUS expression
+    (4) expression -> expression . CARET expression
+
+    RPAREN          shift and go to state 33
+    AND             shift and go to state 13
+    OR              shift and go to state 14
+    MINUS           shift and go to state 15
+    CARET           shift and go to state 16
+
+
+state 24
+
+    (16) primary -> LSQUARE opt_caret . ranges RSQUARE
+    (19) ranges -> . ranges range
+    (20) ranges -> . range
+    (21) range -> . ID
+    (22) range -> . ID MINUS ID
+
+    ID              shift and go to state 36
+
+    ranges                         shift and go to state 34
+    range                          shift and go to state 35
+
+state 25
+
+    (17) opt_caret -> CARET .
+
+    ID              reduce using rule 17 (opt_caret -> CARET .)
+
+
+state 26
+
+    (1) expression -> expression AND expression .
+    (1) expression -> expression . AND expression
+    (2) expression -> expression . OR expression
+    (3) expression -> expression . MINUS expression
+    (4) expression -> expression . CARET expression
+
+    AND             reduce using rule 1 (expression -> expression AND expression .)
+    OR              reduce using rule 1 (expression -> expression AND expression .)
+    MINUS           reduce using rule 1 (expression -> expression AND expression .)
+    CARET           reduce using rule 1 (expression -> expression AND expression .)
+    $end            reduce using rule 1 (expression -> expression AND expression .)
+    NOT             reduce using rule 1 (expression -> expression AND expression .)
+    DIGITS          reduce using rule 1 (expression -> expression AND expression .)
+    LPAREN          reduce using rule 1 (expression -> expression AND expression .)
+    LSQUARE         reduce using rule 1 (expression -> expression AND expression .)
+    DOT             reduce using rule 1 (expression -> expression AND expression .)
+    ID              reduce using rule 1 (expression -> expression AND expression .)
+    ESCAPED         reduce using rule 1 (expression -> expression AND expression .)
+    EPSILON         reduce using rule 1 (expression -> expression AND expression .)
+    RPAREN          reduce using rule 1 (expression -> expression AND expression .)
+
+  ! AND             [ shift and go to state 13 ]
+  ! OR              [ shift and go to state 14 ]
+  ! MINUS           [ shift and go to state 15 ]
+  ! CARET           [ shift and go to state 16 ]
+
+
+state 27
+
+    (2) expression -> expression OR expression .
+    (1) expression -> expression . AND expression
+    (2) expression -> expression . OR expression
+    (3) expression -> expression . MINUS expression
+    (4) expression -> expression . CARET expression
+
+    OR              reduce using rule 2 (expression -> expression OR expression .)
+    MINUS           reduce using rule 2 (expression -> expression OR expression .)
+    CARET           reduce using rule 2 (expression -> expression OR expression .)
+    $end            reduce using rule 2 (expression -> expression OR expression .)
+    NOT             reduce using rule 2 (expression -> expression OR expression .)
+    DIGITS          reduce using rule 2 (expression -> expression OR expression .)
+    LPAREN          reduce using rule 2 (expression -> expression OR expression .)
+    LSQUARE         reduce using rule 2 (expression -> expression OR expression .)
+    DOT             reduce using rule 2 (expression -> expression OR expression .)
+    ID              reduce using rule 2 (expression -> expression OR expression .)
+    ESCAPED         reduce using rule 2 (expression -> expression OR expression .)
+    EPSILON         reduce using rule 2 (expression -> expression OR expression .)
+    RPAREN          reduce using rule 2 (expression -> expression OR expression .)
+    AND             shift and go to state 13
+
+  ! AND             [ reduce using rule 2 (expression -> expression OR expression .) ]
+  ! OR              [ shift and go to state 14 ]
+  ! MINUS           [ shift and go to state 15 ]
+  ! CARET           [ shift and go to state 16 ]
+
+
+state 28
+
+    (3) expression -> expression MINUS expression .
+    (1) expression -> expression . AND expression
+    (2) expression -> expression . OR expression
+    (3) expression -> expression . MINUS expression
+    (4) expression -> expression . CARET expression
+
+    OR              reduce using rule 3 (expression -> expression MINUS expression .)
+    MINUS           reduce using rule 3 (expression -> expression MINUS expression .)
+    CARET           reduce using rule 3 (expression -> expression MINUS expression .)
+    $end            reduce using rule 3 (expression -> expression MINUS expression .)
+    NOT             reduce using rule 3 (expression -> expression MINUS expression .)
+    DIGITS          reduce using rule 3 (expression -> expression MINUS expression .)
+    LPAREN          reduce using rule 3 (expression -> expression MINUS expression .)
+    LSQUARE         reduce using rule 3 (expression -> expression MINUS expression .)
+    DOT             reduce using rule 3 (expression -> expression MINUS expression .)
+    ID              reduce using rule 3 (expression -> expression MINUS expression .)
+    ESCAPED         reduce using rule 3 (expression -> expression MINUS expression .)
+    EPSILON         reduce using rule 3 (expression -> expression MINUS expression .)
+    RPAREN          reduce using rule 3 (expression -> expression MINUS expression .)
+    AND             shift and go to state 13
+
+  ! AND             [ reduce using rule 3 (expression -> expression MINUS expression .) ]
+  ! OR              [ shift and go to state 14 ]
+  ! MINUS           [ shift and go to state 15 ]
+  ! CARET           [ shift and go to state 16 ]
+
+
+state 29
+
+    (4) expression -> expression CARET expression .
+    (1) expression -> expression . AND expression
+    (2) expression -> expression . OR expression
+    (3) expression -> expression . MINUS expression
+    (4) expression -> expression . CARET expression
+
+    OR              reduce using rule 4 (expression -> expression CARET expression .)
+    MINUS           reduce using rule 4 (expression -> expression CARET expression .)
+    CARET           reduce using rule 4 (expression -> expression CARET expression .)
+    $end            reduce using rule 4 (expression -> expression CARET expression .)
+    NOT             reduce using rule 4 (expression -> expression CARET expression .)
+    DIGITS          reduce using rule 4 (expression -> expression CARET expression .)
+    LPAREN          reduce using rule 4 (expression -> expression CARET expression .)
+    LSQUARE         reduce using rule 4 (expression -> expression CARET expression .)
+    DOT             reduce using rule 4 (expression -> expression CARET expression .)
+    ID              reduce using rule 4 (expression -> expression CARET expression .)
+    ESCAPED         reduce using rule 4 (expression -> expression CARET expression .)
+    EPSILON         reduce using rule 4 (expression -> expression CARET expression .)
+    RPAREN          reduce using rule 4 (expression -> expression CARET expression .)
+    AND             shift and go to state 13
+
+  ! AND             [ reduce using rule 4 (expression -> expression CARET expression .) ]
+  ! OR              [ shift and go to state 14 ]
+  ! MINUS           [ shift and go to state 15 ]
+  ! CARET           [ shift and go to state 16 ]
+
+
+state 30
+
+    (12) primary -> primary LCURLY rspec . RCURLY
+
+    RCURLY          shift and go to state 37
+
+
+state 31
+
+    (27) rspec -> INTEGER .
+    (28) rspec -> INTEGER . COMMA
+    (30) rspec -> INTEGER . COMMA INTEGER
+
+    RCURLY          reduce using rule 27 (rspec -> INTEGER .)
+    COMMA           shift and go to state 38
+
+
+state 32
+
+    (29) rspec -> COMMA . INTEGER
+
+    INTEGER         shift and go to state 39
+
+
+state 33
+
+    (15) primary -> LPAREN expression RPAREN .
+
+    STAR            reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    PLUS            reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    QMARK           reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    LCURLY          reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    NOT             reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    DIGITS          reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    LPAREN          reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    LSQUARE         reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    DOT             reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    ID              reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    ESCAPED         reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    EPSILON         reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    AND             reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    OR              reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    MINUS           reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    CARET           reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    $end            reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+    RPAREN          reduce using rule 15 (primary -> LPAREN expression RPAREN .)
+
+
+state 34
+
+    (16) primary -> LSQUARE opt_caret ranges . RSQUARE
+    (19) ranges -> ranges . range
+    (21) range -> . ID
+    (22) range -> . ID MINUS ID
+
+    RSQUARE         shift and go to state 40
+    ID              shift and go to state 36
+
+    range                          shift and go to state 41
+
+state 35
+
+    (20) ranges -> range .
+
+    RSQUARE         reduce using rule 20 (ranges -> range .)
+    ID              reduce using rule 20 (ranges -> range .)
+
+
+state 36
+
+    (21) range -> ID .
+    (22) range -> ID . MINUS ID
+
+    RSQUARE         reduce using rule 21 (range -> ID .)
+    ID              reduce using rule 21 (range -> ID .)
+    MINUS           shift and go to state 42
+
+
+state 37
+
+    (12) primary -> primary LCURLY rspec RCURLY .
+
+    STAR            reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    PLUS            reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    QMARK           reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    LCURLY          reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    NOT             reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    DIGITS          reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    LPAREN          reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    LSQUARE         reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    DOT             reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    ID              reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    ESCAPED         reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    EPSILON         reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    AND             reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    OR              reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    MINUS           reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    CARET           reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    $end            reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+    RPAREN          reduce using rule 12 (primary -> primary LCURLY rspec RCURLY .)
+
+
+state 38
+
+    (28) rspec -> INTEGER COMMA .
+    (30) rspec -> INTEGER COMMA . INTEGER
+
+    RCURLY          reduce using rule 28 (rspec -> INTEGER COMMA .)
+    INTEGER         shift and go to state 43
+
+
+state 39
+
+    (29) rspec -> COMMA INTEGER .
+
+    RCURLY          reduce using rule 29 (rspec -> COMMA INTEGER .)
+
+
+state 40
+
+    (16) primary -> LSQUARE opt_caret ranges RSQUARE .
+
+    STAR            reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    PLUS            reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    QMARK           reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    LCURLY          reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    NOT             reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    DIGITS          reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    LPAREN          reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    LSQUARE         reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    DOT             reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    ID              reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    ESCAPED         reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    EPSILON         reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    AND             reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    OR              reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    MINUS           reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    CARET           reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    $end            reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+    RPAREN          reduce using rule 16 (primary -> LSQUARE opt_caret ranges RSQUARE .)
+
+
+state 41
+
+    (19) ranges -> ranges range .
+
+    RSQUARE         reduce using rule 19 (ranges -> ranges range .)
+    ID              reduce using rule 19 (ranges -> ranges range .)
+
+
+state 42
+
+    (22) range -> ID MINUS . ID
+
+    ID              shift and go to state 44
+
+
+state 43
+
+    (30) rspec -> INTEGER COMMA INTEGER .
+
+    RCURLY          reduce using rule 30 (rspec -> INTEGER COMMA INTEGER .)
+
+
+state 44
+
+    (22) range -> ID MINUS ID .
+
+    RSQUARE         reduce using rule 22 (range -> ID MINUS ID .)
+    ID              reduce using rule 22 (range -> ID MINUS ID .)
+
+WARNING: 
+WARNING: Conflicts:
+WARNING: 
+WARNING: shift/reduce conflict for NOT in state 3 resolved as shift
+WARNING: shift/reduce conflict for DIGITS in state 3 resolved as shift
+WARNING: shift/reduce conflict for LPAREN in state 3 resolved as shift
+WARNING: shift/reduce conflict for LSQUARE in state 3 resolved as shift
+WARNING: shift/reduce conflict for DOT in state 3 resolved as shift
+WARNING: shift/reduce conflict for ID in state 3 resolved as shift
+WARNING: shift/reduce conflict for ESCAPED in state 3 resolved as shift
+WARNING: shift/reduce conflict for EPSILON in state 3 resolved as shift
+WARNING: shift/reduce conflict for AND in state 18 resolved as shift
+WARNING: shift/reduce conflict for OR in state 18 resolved as shift
+WARNING: shift/reduce conflict for MINUS in state 18 resolved as shift
+WARNING: shift/reduce conflict for CARET in state 18 resolved as shift
