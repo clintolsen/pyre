@@ -3,10 +3,10 @@ import argparse
 from pathlib import Path
 import logging
 
-import regex
-import dfa
-import util
-from parser import Parser
+from . import regex
+from . import dfa
+from . import util
+from .parser import Parser
 
 LOG = logging.getLogger(__file__)
 

@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 
-from cli import main
+import sys
+from pathlib import Path
+
+# Add parent directory to path so we can import pyre package
+parent_dir = Path(__file__).resolve().parent.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
+
+from pyre.cli import main
 
 if __name__ == '__main__':
     main()
