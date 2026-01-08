@@ -47,8 +47,6 @@ The project includes:
 
 ## Installation
 
-## Installation
-
 Requires **Python 3.8+** and **PLY**.
 
 ### Installing PLY
@@ -60,30 +58,42 @@ containing the PLY sources.
 
 You can fetch a pinned version of PLY into `ply/` by running:
 
-```❯ bash scripts/get_ply.sh```
+    bash scripts/get_ply.sh
 
 ---
 
 ## Command Line Usage
 
-  ```pyre [-h] [--debug] regex target```
+    pyre [-h] [--debug] regex target
 
 Example:
 
-  ```❯ pyre 'lex' test.cpp```
+    pyre 'lex' test.cpp
 
 ---
 
 ## Python Usage
 
-    import regex
-    from parser import Parser
-
-    parser = Parser()
-    expr = parser.parse("(a|b)c")
-
-    print(regex.match(expr, "ac"))
-    print(regex.search(expr, "xxbcxx", all=True))
+  ```python
+  import pyre
+  
+  # Simple API - pass pattern strings directly
+  # Group 0 = full match, Group 1 = first capture group (a|b)
+  #
+  result = pyre.match("(a|b)c", "ac")
+  print(result)  # {1: (0, 1), 0: (0, 2)}
+  
+  results = pyre.search("(a|b)c", "xxbcxx", all=True)
+  print(results)  # {1: [(2, 3)], 0: [(2, 4)]}
+  
+  # Or compile once, use many times (for performance)
+  #
+  compiled = pyre.compile("(a|b)c")
+  result1 = pyre.dfa.match(compiled, "ac")
+  print(result1)  # {1: (0, 1), 0: (0, 2)}
+  result2 = pyre.dfa.match(compiled, "bc")
+  print(result2)  # {1: (0, 1), 0: (0, 2)}
+  ```
 
 ---
 
