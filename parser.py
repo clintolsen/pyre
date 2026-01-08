@@ -1,6 +1,6 @@
-import ply.yacc as yacc
-import ply.lex as lex
-import regex
+from .ply import yacc as yacc
+from .ply import lex as lex
+from . import regex
 
 import logging
 LOG = logging.getLogger(__file__)

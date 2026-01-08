@@ -8,12 +8,12 @@ from pathlib import Path
 # Add the project root (the directory containing parser.py, regex.py, etc.)
 # to sys.path so imports work when running this file directly.
 #
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from parser import Parser
-import dfa
+from pyre import Parser
+import pyre.dfa as dfa
 
 
 class RegexTestCase(unittest.TestCase):

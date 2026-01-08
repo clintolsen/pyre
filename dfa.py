@@ -5,8 +5,8 @@
 import logging
 LOG = logging.getLogger(__file__)
 
-import util
-import regex
+from . import util
+from . import regex
 
 # Manage state transition information. In addition to keeping track of the next
 # state, we will also house info about which particular states were used to
