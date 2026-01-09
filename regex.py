@@ -157,24 +157,6 @@ class Regex:
         if hasattr(self, 'expr'):
             self.expr.walk(code)
 
-    @staticmethod
-    def find(expr, expr_type, look):
-        ''' Find look in expr any leaves of expr_type '''
-        if isinstance(expr, expr_type):
-            if hasattr(expr, 'left'):
-                if Regex.find(expr.left, expr_type, look):
-                    return True
-            if hasattr(expr, 'right'):
-                if Regex.find(expr.right, expr_type, look):
-                    return True
-            if hasattr(expr, 'expr'):
-                if Regex.find(expr.expr, expr_type, look):
-                    return True
-
-        if expr == look:
-            return True
-
-        return False
 
     @staticmethod
     def get_args(expr, expr_type):
@@ -374,36 +356,36 @@ class RegexOr(Regex):
     def __new__(cls, left, right, **kwargs):
         ''' Create an OR '''
 
-        # Optimizations for OR
+        # 4) ¬∅ + r ≈ ¬∅
+        #    r + ¬∅ ≈ ¬∅
         #
-        # 1) r+r ≈ r
-        #
-        if Regex.find(left, (RegexOr, RegexExpr), right):
-            return left
-
-        # Check precedence before implementing
-        #if Regex.find(right, (RegexOr, RegexExpr), left):
-        #    return right
-
-        # 4) ¬∅+r ≈ ¬∅, r+¬∅ ≈ ¬∅
-        #
-        if any((left.isany, right.isany)):
+        if left.isany or right.isany:
             return RegexNot(RegexEmpty())
 
-        # 5) ∅+r ≈ r
+        # 5) ∅ + r ≈ r
+        #    r + ∅ ≈ r
         #
         if left.isempty:
             return right
-
-        # 5) r+∅ ≈ r
-        #
         if right.isempty:
             return left
 
-        # 2) r+s ≈ s+r
+        # 1) r + r ≈ r
         #
-        args = [*Regex.get_args(left, RegexOr), *Regex.get_args(right, RegexOr)]
-        key = (cls, frozenset(args), frozenset(kwargs.items()))
+        if left is right:
+            return left
+
+        args_l = set(Regex.get_args(left, RegexOr))
+        args_r = set(Regex.get_args(right, RegexOr))
+        if args_r <= args_l:
+            return left
+        if args_l <= args_r:
+            return right
+
+        # 2) r + s ≈ s + r
+        #
+        args_u = args_l | args_r
+        key = (cls, frozenset(args_u), frozenset(kwargs.items()))
 
         try:
             self = Regex._instance[key]
@@ -434,7 +416,7 @@ class RegexXor(Regex):
     '''Set (XOR): r ⊕ s - Match RE r xor RE s
 
     ∂𝑎(r+s) = ∂𝑎(r) ⊕ ∂𝑎(s)
-    ν(r+s) = ν(r) ⊕ ν(s)
+    ν(r⊕s) = ν(r) ⊕ ν(s)
 
     '''
     sym = '^'
@@ -442,26 +424,22 @@ class RegexXor(Regex):
     def __new__(cls, left, right, **kwargs):
         ''' Create an XOR '''
 
-        # Optimizations for XOR
+        # 3) r ⊕ r = ∅
         #
-        # 1) ∅⊕r = r
+        if left is right:
+            return RegexEmpty()
+
+        # 1) ∅ ⊕ r = r
         #
         if left.isempty:
             return right
 
-        # 2) r⊕∅ = r
+        # 2) r ⊕ ∅ = r
         #
         if right.isempty:
             return left
 
-        # 3) r⊕r = ∅
-        #
-        if all((left.isempty, right.isempty)):
-            return RegexEmpty()
-
-        args = [*Regex.get_args(left, RegexXor), *Regex.get_args(right, RegexXor)]
-
-        key = (cls, frozenset(args), frozenset(kwargs.items()))
+        key = (cls, frozenset((left, right)), frozenset(kwargs.items()))
 
         try:
             self = Regex._instance[key]
@@ -501,28 +479,32 @@ class RegexAnd(Regex):
     def __new__(cls, left, right, **kwargs):
         ''' Create an AND '''
 
-        # 1) r&r ≈ r
+        # 4) ∅ & r ≈ ∅
         #
-        if Regex.find(left, (RegexAnd, RegexExpr), right):
-            return left
-
-        # 4) ∅&r ≈ ∅
-        #
-        if any((left.isempty, right.isempty)):
+        if left.isempty or right.isempty:
             return RegexEmpty()
 
         # 5) ¬∅ & r ≈ r
-        #
+        #    r & ¬∅ ≈ r
         if left.isany:
             return right
-
-        # 5) r & ¬∅ ≈ r
-        #
         if right.isany:
             return left
 
-        args = [*Regex.get_args(left, RegexAnd), *Regex.get_args(right, RegexAnd)]
-        key = (cls, frozenset(args), frozenset(kwargs.items()))
+        # 1) r & r ≈ r
+        #
+        if left is right:
+            return left
+
+        args_l = set(Regex.get_args(left, RegexAnd))
+        args_r = set(Regex.get_args(right, RegexAnd))
+        if args_r <= args_l:
+            return left
+        if args_l <= args_r:
+            return right
+
+        args_u = args_l | args_r
+        key = (cls, frozenset(args_u), frozenset(kwargs.items()))
 
         try:
             self = Regex._instance[key]
@@ -795,7 +777,7 @@ class RegexDiff(Regex):
     def __new__(cls, left, right, **kwargs):
         # r - r = ∅
         #
-        if left == right:
+        if left is right:
             return RegexEmpty()
 
         # ∅ - r = ∅
@@ -818,8 +800,7 @@ class RegexDiff(Regex):
         if right.isany:
             return RegexEmpty()
 
-        args = [*Regex.get_args(left, RegexDiff), *Regex.get_args(right, RegexDiff)]
-        key = (cls, *args, frozenset(kwargs.items()))
+        key = (cls, left, right, frozenset(kwargs.items()))
 
         try:
             self = Regex._instance[key]
