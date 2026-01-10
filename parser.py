@@ -236,7 +236,7 @@ class Parser:
         p[0] = p[1]
 
     def p_concat_list(self, p):
-        'concat : concat expression'
+        'concat : concat primary'
         p[0] = regex.RegexConcat(p[1], p[2])
 
     def p_concat_primary(self, p):
