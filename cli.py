@@ -20,18 +20,31 @@ def main(argv=None):
         const=logging.DEBUG,
         help='Enable debug logging'
     )
+    argparser.add_argument(
+        '--no-greedy',
+        action='store_false',
+        dest='greedy',
+        default=True,
+        help='Disable greedy matching (default: greedy)'
+    )
+    argparser.add_argument(
+        '--all', '-a',
+        action='store_true',
+        help='Return all matches'
+    )
     argparser.add_argument('regex', help='Regular expression')
-    argparser.add_argument('target', help='Target string or file')
+    argparser.add_argument('target', help='String or file to search')
 
     args = argparser.parse_args(argv)
 
     logging.basicConfig(
         level=args.debug,
-        format='%(message)s'
+        format='%(message)s',
+        stream=sys.stdout
     )
 
     kwargs = {}
-    kwargs['debug'] = args.debug == logging.DEBUG
+    # kwargs['debug'] = args.debug == logging.DEBUG
 
     parser = Parser(**kwargs)
     regexp = parser.parse(args.regex)
@@ -44,10 +57,11 @@ def main(argv=None):
         with open(target) as f:
             file = f.read()
 
-        groups = dfa.search(regexp, file, all=True)
+        groups = dfa.search(regexp, file, all=args.all, greedy=args.greedy)
+        LOG.debug(f'Groups: {groups}')
         flatten = [interval for group in groups.values() for interval in group]
         intervals = regex.merge_intervals(flatten)
-        LOG.debug(intervals)
+        LOG.debug(f'Merged intervals: {intervals}')
 
         i = 0
         while i < len(file):

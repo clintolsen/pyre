@@ -172,7 +172,6 @@ class GroupInfo:
         ended = current_active - group_set
         for g in ended:
             start = self.active[g]
-            # Use your Group class here
             self.final[g] = Group(g, start, index)
             del self.active[g]
 
@@ -186,6 +185,16 @@ class GroupInfo:
         for g, start in list(self.active.items()):
             self.final[g] = Group(g, start, end_index)
             del self.active[g]
+
+  
+    def snapshot(self, end_index):
+        """
+        Take a snapshot of what the state looks like at this index.
+        """
+        out = dict(self.final)
+        for g, start in self.active.items():
+            out[g] = Group(g, start, end_index)
+        return out
 
 
 from collections import namedtuple
@@ -267,17 +276,63 @@ def match(expr, string):
     return result
 
 
-# Searching is a special case of matching, and we can take advantage of wildcard
-# behavior of .* to find a pattern within a string. Rewrite our pattern
-# surrounded by any match.
-#
-def search(expr, string, *, all=False):
+def _match_from(start_state, string, offset, *, greedy: bool = True):
+    """
+    Run the DFA starting at `offset` and return the best match from that start.
+
+    Returns:
+        (groups, end_index, stop_at)
+
+    Where:
+        groups   : dict[group_id] -> list[(start, end)]  (or None if no match)
+        end_index: match end (exclusive) (or None)
+        stop_at  : index where the run stopped:
+                    - if it died: the index that produced ∅
+                    - if it hit EOF: the last processed index (or None if no chars processed)
+    """
+    group_info = GroupInfo()
+    latest = None  # (groups, end_index)
+    last_step_index = None
+
+    for step in dfa_run(start_state, string, start_index=offset):
+        last_step_index = step.index
+        state = step.state
+
+        if state.isempty:
+            stop_at = step.index
+            if latest is None:
+                return None, None, stop_at
+            groups, end_index = latest
+            return groups, end_index, stop_at
+
+        group_info.step(step.index, step.group)
+
+        if state.isnullable():
+            end_index = step.index + 1
+            snap = group_info.snapshot(end_index)
+            groups = {g_id: [grp.as_tuple()] for g_id, grp in snap.items()}
+            latest = (groups, end_index)
+
+            if not greedy:
+                return groups, end_index, None
+
+    # EOF
+    if latest is None:
+        return None, None, last_step_index
+    groups, end_index = latest
+    return groups, end_index, last_step_index
+
+
+def search(expr, string, *, greedy=True, all=False):
     """
     Search for `expr` in `string`.
 
+    if policy is 'first':
+        - return shortest 
+
     If all is False (default):
         - returns {} if no match
-        - otherwise returns {group_id: (start, end)} for the first match
+        - otherwise returns {group_id: [(start, end)]} for the first match
 
     If all is True:
         - returns {} if no match
@@ -287,77 +342,35 @@ def search(expr, string, *, all=False):
     start_state = compile(expr)
     n = len(string)
 
-    # First match
-    #
     if not all:
         offset = 0
-
         while offset < n:
-            state = start_state
-            group_info = GroupInfo()
+            groups, end_index, stop_at = _match_from(
+                start_state, string, offset, greedy=greedy
+            )
 
-            for step in dfa_run(start_state, string, start_index=offset):
-                state = step.state
+            if groups is not None:
+                return groups
 
-                if state.isempty:
-                    # This run died; restart at next character
-                    offset = step.index + 1
-                    break
+            offset = (stop_at + 1) if stop_at is not None else (offset + 1)
 
-                group_info.step(step.index, step.group)
-
-                if state.isnullable():
-                    # Found a match ending at end_index
-                    end_index = step.index + 1
-                    group_info.close(end_index)
-                    return {
-                        g_id: grp.as_tuple()
-                        for g_id, grp in group_info.final.items()
-                    }
-
-            else:
-                # Reached end of string without dead or accept for this offset
-                return {}
-
-        # Exhausted all offsets with no match
         return {}
 
-    # All matches
-    #
-    all_groups = {}   # group_id -> [ (start, end), ... ]
+    # all=True: collect non-overlapping matches
+    all_groups = {}
     offset = 0
-
     while offset < n:
-        state = start_state
-        group_info = GroupInfo()
-        made_progress = False
+        groups, end_index, stop_at = _match_from(
+            start_state, string, offset, greedy=greedy
+        )
 
-        for step in dfa_run(start_state, string, start_index=offset):
-            state = step.state
+        if groups is None:
+            offset = (stop_at + 1) if stop_at is not None else (offset + 1)
+            continue
 
-            if state.isempty:
-                # This run died; move offset forward and try again
-                offset = step.index + 1
-                made_progress = True
-                break
+        for g_id, intervals in groups.items():
+            all_groups.setdefault(g_id, []).extend(intervals)
 
-            group_info.step(step.index, step.group)
-
-            if state.isnullable():
-                end_index = step.index + 1
-                group_info.close(end_index)
-
-                # Merge this match's groups into the accumulator
-                for g_id, grp in group_info.final.items():
-                    all_groups.setdefault(g_id, []).append(grp.as_tuple())
-
-                # Non-overlapping: restart from end of this match
-                offset = end_index
-                made_progress = True
-                break
-
-        if not made_progress:
-            # No dead state and no accept from this offset → nothing more to find
-            break
+        offset = end_index
 
     return all_groups
