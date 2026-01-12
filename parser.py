@@ -307,14 +307,13 @@ class Parser:
     def p_primary_digits(self, p):
         'primary : DIGITS'
 
-        p[0] = regex.RegexSym('0', **p[1].kwds)
+        mask = 0
+        for code in range(ord('0'), ord('9') + 1):
+            mask |= 1 << code
 
-        for num in range(ord('1'), ord('9') + 1):
-            p[0] = regex.RegexOr(
-                       p[0],
-                       regex.RegexSym(chr(num), **p[1].kwds),
-                       **p[1].kwds
-                       )
+        charset = regex.CharSet([mask])
+
+        p[0] = regex.RegexSym(charset, **p[1].kwds)
 
     def p_primary_id(self, p):
         'primary : literal'
