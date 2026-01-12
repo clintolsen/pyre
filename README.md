@@ -58,42 +58,50 @@ containing the PLY sources.
 
 You can fetch a pinned version of PLY into `ply/` by running:
 
-    bash scripts/get_ply.sh
+```bash
+bash scripts/get_ply.sh
+```
 
 ---
 
 ## Command Line Usage
 
-    pyre [-h] [--debug] regex target
+```bash
+pyre [-h] [--debug] regex target
+```
 
 Example:
 
-    pyre 'lex' test.cpp
+```bash
+pyre 'lex' test.cpp
+```
 
 ---
 
 ## Python Usage
 
-  ```python
-  import pyre
-  
-  # Simple API - pass pattern strings directly
-  # Group 0 = full match, Group 1 = first capture group (a|b)
-  #
-  result = pyre.match("(a|b)c", "ac")
-  print(result)  # {1: (0, 1), 0: (0, 2)}
-  
-  results = pyre.search("(a|b)c", "xxbcxx", all=True)
-  print(results)  # {1: [(2, 3)], 0: [(2, 4)]}
-  
-  # Or compile once, use many times (for performance)
-  #
-  compiled = pyre.compile("(a|b)c")
-  result1 = pyre.dfa.match(compiled, "ac")
-  print(result1)  # {1: (0, 1), 0: (0, 2)}
-  result2 = pyre.dfa.match(compiled, "bc")
-  print(result2)  # {1: (0, 1), 0: (0, 2)}
-  ```
+```python
+#!/usr/bin/env python
+
+import pyre
+
+# Simple API - pass pattern strings directly
+# Group 0 = full match, Group 1 = first capture group (a|b)
+#
+result = pyre.match("(a|b)c", "ac")
+print(result)  # {1: (0, 1), 0: (0, 2)}
+
+results = pyre.search("(a|b)c", "xxbcxx", all=True)
+print(results)  # {1: [(2, 3)], 0: [(2, 4)]}
+
+# Or compile once, use many times (for performance)
+#
+compiled = pyre.compile("(a|b)c")
+result1 = pyre.match(compiled, "ac")
+print(result1)  # {1: (0, 1), 0: (0, 2)}
+result2 = pyre.match(compiled, "bc")
+print(result2)  # {1: (0, 1), 0: (0, 2)}
+```
 
 ---
 
