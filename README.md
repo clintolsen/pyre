@@ -100,12 +100,16 @@ Example:
 ## Project Structure
 
     pyre/
+      __init__.py
       cli.py
-      parser.py
-      regex.py
       dfa.py
+      parser.py
+      pyre
+      regex.py
       util.py
       test/
+        __init__.py
+        test_basic.py
 
 ---
 
