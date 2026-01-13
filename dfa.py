@@ -119,24 +119,6 @@ def compile(expr):
     return initial_state
 
 
-# Capture group object
-#
-class Group:
-    def __init__(self, name, start, end):
-        self.name = name
-        self.start = start
-        self.end = end
-
-    def as_tuple(self):
-        return (self.start, self.end)
-
-    def __str__(self):
-        return f'Group(name={self.name} {self.start}, {self.end})'
-
-    def __repr__(self):
-        return f'Group(name={self.name} {self.start}, {self.end})'
-
-
 class GroupInfo:
     """
     Tracks capture groups based on the set of active groups from each DFA step.
@@ -147,7 +129,7 @@ class GroupInfo:
     """
     def __init__(self):
         self.active = {}   # g -> start_index
-        self.final  = {}   # g -> Group object (or similar)
+        self.final  = {}   # g -> [(start, end), ...]
 
     def step(self, index, group_set):
         """
@@ -172,30 +154,26 @@ class GroupInfo:
         ended = current_active - group_set
         for g in ended:
             start = self.active[g]
-            self.final[g] = Group(g, start, index)
+            self.final.setdefault(g, []).append((start, index)) # self.final[g] = [(start, index)]
             del self.active[g]
 
         return started, ended
 
-    def close(self, end_index):
+    def finalize(self, match_start: int, match_end: int):
         """
-        Close any still-active groups at a final end position (exclusive),
-        e.g. when overall match ends.
+        Produce groups for a completed match [start_index, end_index),
+        and always include group 0.
         """
-        for g, start in list(self.active.items()):
-            self.final[g] = Group(g, start, end_index)
-            del self.active[g]
+        out = {g: list(v) for g, v in self.final.items()} 
 
-  
-    def snapshot(self, end_index):
-        """
-        Take a snapshot of what the state looks like at this index.
-        """
-        out = dict(self.final)
+        # close any still-active groups at end_index
         for g, start in self.active.items():
-            out[g] = Group(g, start, end_index)
-        return out
+            out.setdefault(g, []).append((start, match_end))
 
+        # group 0 is the whole match, no excuses
+        out.setdefault(0, [(match_start, match_end)]) # out.setdefault(g, []).append((s, index))
+
+        return out
 
 from collections import namedtuple
 
@@ -236,44 +214,33 @@ def match(expr, string):
         {} if no match
 
         Otherwise:
-            {group_id: (start, end)}
+            {group_id: [(start, end), ...]}
         where start/end are 0-based indices into `string`, end-exclusive.
     """
-    start_state = compile(expr)   # bare expr, no .* wrapping
+    start_state = compile(expr)   # yo, straight-up compile, no .* nonsense
     group_info = GroupInfo()
     state = start_state
 
     for step in dfa_run(start_state, string):
         state = step.state
 
-        # Dead state → match impossible
-        #
+        # dead state? yeah it's cooked, bounce
         if state.isempty:
             return {}
 
-        # Track capture groups safely
-        #
+        # track dem capture groups like a hawk
         group_info.step(step.index, step.group)
 
-    # End of input: require accepting state for a full match
-    #
+    # end of input: full match only if we're in accept land
     if not state.isnullable():
         return {}
 
-    # Close any still-active groups at end-of-string
-    #
     end_index = len(string)
-    group_info.close(end_index)
 
-    # If group 0 didn't get recorded via transitions, synthesize it
-    #
-    if 0 not in group_info.final:
-        group_info.final[0] = Group(0, 0, end_index)
+    # finalize match span [0, end_index) and guarantee group 0 exists
+    finalized = group_info.finalize(0, end_index)
 
-    # Expose simple intervals instead of Group objects
-    #
-    result = {g_id: grp.as_tuple() for g_id, grp in group_info.final.items()}
-    return result
+    return finalized
 
 
 def _match_from(start_state, string, offset, *, greedy: bool = True):
@@ -309,8 +276,7 @@ def _match_from(start_state, string, offset, *, greedy: bool = True):
 
         if state.isnullable():
             end_index = step.index + 1
-            snap = group_info.snapshot(end_index)
-            groups = {g_id: [grp.as_tuple()] for g_id, grp in snap.items()}
+            groups = group_info.finalize(offset, end_index)
             latest = (groups, end_index)
 
             if not greedy:
@@ -327,8 +293,7 @@ def search(expr, string, *, greedy=True, all=False):
     """
     Search for `expr` in `string`.
 
-    if policy is 'first':
-        - return shortest 
+    Greedy: Find the longest match.
 
     If all is False (default):
         - returns {} if no match
