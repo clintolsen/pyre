@@ -311,7 +311,7 @@ class Parser:
         for code in range(ord('0'), ord('9') + 1):
             mask |= 1 << code
 
-        charset = regex.CharSet([mask])
+        charset = regex.CharSet(mask)
 
         p[0] = regex.RegexSym(charset, **p[1].kwds)
 
@@ -335,7 +335,7 @@ class Parser:
         for ch, _kwds in items:
             mask |= 1 << ord(ch)
 
-        charset = regex.CharSet([mask])
+        charset = regex.CharSet(mask)
 
         # Reuse the kwds from the first item (escape flags etc.)
         #

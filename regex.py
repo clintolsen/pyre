@@ -197,7 +197,7 @@ class RegexEmpty(Regex):
             # Full charset: all bits set in the supported range.
             #
             full_mask = CHARSET_MAX - 1
-            self.charset = CharSet([full_mask])
+            self.charset = CharSet(full_mask)
             self.isempty = True
             Regex._instance[key] = self
 
@@ -229,7 +229,7 @@ class RegexEpsilon(Regex):
             # Full charset: all bits set in the supported range.
             #
             full_mask = CHARSET_MAX - 1
-            self.charset = CharSet([full_mask])
+            self.charset = CharSet(full_mask)
             self.key = key
             self.isepsilon = True
             Regex._instance[key] = self
@@ -275,7 +275,7 @@ class RegexSym(Regex):
 
         # For partitioning: always split into S and its complement
         part_masks = [mask, full_mask ^ mask]
-        charset = CharSet(part_masks)
+        charset = CharSet(*part_masks)
 
         key = (cls, mask, negate, frozenset(kwargs.items()))
 
@@ -321,7 +321,7 @@ class RegexSym(Regex):
 
         # Build a CharSet from the *semantic* mask only
         #
-        mask_charset = CharSet([self.mask])
+        mask_charset = CharSet(self.mask)
         intervals = mask_charset.get_chr_sets()   # [[['c']], ...] etc.
         parts = []
 
@@ -672,7 +672,7 @@ class RegexDot(Regex):
             # Full charset: all bits set in the supported range.
             #
             full_mask = CHARSET_MAX - 1
-            self.charset = CharSet([full_mask])
+            self.charset = CharSet(full_mask)
             self.isdot = True
             Regex._instance[key] = self
 
@@ -926,47 +926,58 @@ class RegexExpr(Regex):
 
 
 class CharSet:
-    '''
-    Wrapper around set() to handle sets of characters for transitions to other
-    DFA states.
+    """
+    Unordered, deduped collection of bitmask character sets.
 
-    Caveats:
+    Public attribute:
+        charset: set[int]
+    """
 
-    Special care is made here to always add CHARSET_MAX to all expressions that
-    would be negative so that the expression is always 256 bits and
-    get_int_sets() returns a correct result unpacking the vector.
-    '''
+    def __init__(self, *items):
+        # Fast path: CharSet(other_charset)
+        #
+        if len(items) == 1 and isinstance(items[0], CharSet):
+            # Make a copy so callers can't mutate through aliasing
+            #
+            self.charset = set(items[0].charset)
+            return
 
-    def __init__(self, items=None):
-        if items is None:
-            items = []
-        elif isinstance(items, CharSet):
-            items = items.charset 
-        self.charset = set(items)
+        out = set()
+        for x in items:
+            if isinstance(x, CharSet):
+                out.update(x.charset)
+            else:
+                # Treat x as a single mask (int). If you want to accept
+                # iterables of masks too, do it explicitly (see note below).
+                if x:
+                    out.add(x)
 
-    def add(self, item):
-        ''' Wrapper around set.add() '''
-        self.charset.add(item)
+        self.charset = out
 
-    def __and__(self, other):
-        ''' Perform pair-wise intersection of two charsets and return the result '''
-        and_charset = CharSet()
+    def add(self, item: int) -> None:
+        """Wrapper for add() that ignores 0"""
+        if item:
+            self.charset.add(item)
 
+    def __and__(self, other: "CharSet") -> "CharSet":
+        """Pairwise intersection of two CharSets."""
+        if not self.charset or not other.charset:
+            return CharSet()
+
+        out = set()
         for i in self.charset:
             for j in other.charset:
                 mask = i & j
                 if mask:
-                    and_charset.add(mask)
+                    out.add(mask)
 
-        return and_charset
+        return CharSet(*out)
 
     def get_int_sets(self):
-        ''' Get character sets as lists of integer values '''
         ints = []
 
-        for chset in self.charset:
+        for chset in sorted(self.charset):
             charclass = []
-
             while chset:
                 lsb = chset & -chset
                 i = lsb.bit_length() - 1
@@ -995,23 +1006,23 @@ class CharSet:
             this_set = []
             for interval in intervals:
                 if len(interval) == 1:
-                    # single character like [97] -> ['a']
                     this_set.append([chr(interval[0])])
                 else:
-                    lo, hi = interval   # [97, 122] -> ['a','z']
+                    lo, hi = interval
                     this_set.append([chr(lo), chr(hi)])
             chr_sets.append(this_set)
 
         return chr_sets
 
-
     def contains_ord(self, code: int) -> bool:
-        # Check if this codepoint’s bit shows up in any mask
         mask = 1 << code
         return any(mask & m for m in self.charset)
 
     def __str__(self):
-        return '%s' % self.charset
+        return f"{sorted(self.charset)}"
+
+    def __repr__(self):
+        return f"CharSet({sorted(self.charset)})"
 
 
 # Merge intervals including adjacent, assumed sorted based on the left value.
