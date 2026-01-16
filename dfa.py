@@ -16,26 +16,27 @@ class Goto:
     def __init__(self, _next, _states):
         self._next = _next
         self._states = _states
-        self._group = None
+        self._events = None
 
-    # Collect the group information and return it as a set. We take the union of
-    # all the groups in all the states.
-    #
     @property
-    def group(self):
-        if self._group is None:
-            _group = set()
+    def events(self):
+        if self._events is None:
+            _events = set()
 
             for x in self._states:
-                for y in x.group:
-                    _group.add(y)
+                if x.ismarker:
+                    for y in x.events:
+                        _events.add(y)
 
-            self._group = _group
+            self._events = _events
 
-        return self._group
+        return self._events
 
     def __str__(self):
-        return f'Goto(next={self._next.state_number} group={self.group})'
+        return f'Goto(next={self._next.state_number} events={self.events})'
+
+    def __repr__(self):
+        return f'{self}'
 
 
 def make_char(code):
@@ -62,7 +63,7 @@ def compile(expr):
 
         classes = current_state.charset.get_int_sets()
         current_state.state_number = 'q%d' % len(dfa_states)
-        LOG.debug(f'Current state {current_state.state_number}: {repr(current_state)}')
+        LOG.debug(f'Current state {current_state.state_number}: {current_state}')
         dfa_states.add(current_state)
         states[current_state] = current_state
         current_state.goto = [default_goto] * 256
@@ -77,10 +78,11 @@ def compile(expr):
                 LOG.debug(f'Transition for {[make_char(x) for x in charset[0]]} is {accept}')
 
                 goto = Goto(next_state, accept)
+                LOG.debug(f'Goto events: {goto.events}')
 
                 for rng in charset:
-                    for ch in range(rng[0], rng[-1] + 1):
-                        current_state.goto[ch] = goto
+                    for code in range(rng[0], rng[-1] + 1):
+                        current_state.goto[code] = goto
 
                 if next_state not in dfa_states:
                     todo_list.add(next_state)
@@ -118,6 +120,8 @@ def compile(expr):
 
     return initial_state
 
+from . import event
+from .event import Event
 
 class GroupInfo:
     """
@@ -131,64 +135,71 @@ class GroupInfo:
         self.active = {}   # g -> start_index
         self.final  = {}   # g -> [(start, end), ...]
 
-    def step(self, index, group_set):
+    def step(self, index: int, events: set[Event]):
         """
-        Process one DFA step.
-
-        `index`    = current character index in the input
-        `group_set`= set of group ids active on this transition (goto.group)
-
-        Returns (started, ended) for introspection/debug if you care.
+        index  = current character index in the input (same `index` you log in DFAStep)
+        events = set of Event(...) from the transition (goto.events)
         """
+        if not events:
+            return set(), set()
 
-        # Groups starting: g in group_set but not in active
-        #
-        current_active = set(self.active.keys())
-        started = group_set - current_active
-        for g in started:
-            self.active[g] = index
+        # Handle close events first 
+        # 
+        closes = [e for e in events if e.kind == event.CLOSE]
+        opens  = [e for e in events if e.kind == event.OPEN]
 
-        # Groups ending: g in active but not in group_set
-        #
-        current_active = set(self.active.keys())
-        ended = current_active - group_set
-        for g in ended:
-            start = self.active[g]
-            self.final.setdefault(g, []).append((start, index)) # self.final[g] = [(start, index)]
-            del self.active[g]
+        ended = set()
+        started = set()
+
+        for e in closes:
+            gid = e.gid
+            if gid in self.active:
+                start = self.active[gid]
+                self.final.setdefault(gid, []).append((start, index))
+                del self.active[gid]
+                ended.add(gid)
+            else:
+                # Optional: debug/log unexpected CLOSE
+                # LOG.debug(f"Unmatched CLOSE({gid}) at index={index}")
+                pass
+
+        for e in opens:
+            gid = e.gid
+            # If you can get nested or repeated OPEN without CLOSE, decide policy.
+            # For now: overwrite start (or ignore if already open).
+            #
+            self.active[gid] = index
+            started.add(gid)
 
         return started, ended
 
     def finalize(self, match_start: int, match_end: int):
-        """
-        Produce groups for a completed match [start_index, end_index),
-        and always include group 0.
-        """
-        out = {g: list(v) for g, v in self.final.items()} 
+        out = {g: list(v) for g, v in self.final.items()}
 
-        # close any still-active groups at end_index
-        for g, start in self.active.items():
-            out.setdefault(g, []).append((start, match_end))
+        # Close any still-active groups at end of match
+        #
+        for gid, start in list(self.active.items()):
+            out.setdefault(gid, []).append((start, match_end))
 
-        # group 0 is the whole match, no excuses
-        out.setdefault(0, [(match_start, match_end)]) # out.setdefault(g, []).append((s, index))
+        # Whole match
+        #
+        out.setdefault(0, []).append((match_start, match_end))
 
         return out
 
 from collections import namedtuple
 
-DFAState = namedtuple("DFAState", "index char prev_state state goto group")
+DFAState = namedtuple("DFAState", "index char prev_state state goto")
 
 def dfa_run(start_state, text, start_index=0):
     """
     Iterate a DFA over `text[start_index:]`.
 
-    Yields DFAStep(index, char, prev_state, state, goto, group)
+    Yields DFAStep(index, char, prev_state, state, goto)
     where:
       - prev_state: state before reading char
       - state:      state after reading char
       - goto:       the Goto object used
-      - group:      goto.group
     """
     state = start_state
     for i in range(start_index, len(text)):
@@ -201,7 +212,6 @@ def dfa_run(start_state, text, start_index=0):
             prev_state=state,
             state=next_state,
             goto=goto,
-            group=goto.group,
         )
         state = next_state
 
@@ -217,27 +227,31 @@ def match(expr, string):
             {group_id: [(start, end), ...]}
         where start/end are 0-based indices into `string`, end-exclusive.
     """
-    start_state = compile(expr)   # yo, straight-up compile, no .* nonsense
+    start_state = compile(expr)
     group_info = GroupInfo()
     state = start_state
 
+    LOG.debug(f'Match: {state} against {string}')
+
     for step in dfa_run(start_state, string):
         state = step.state
+        LOG.debug(f'Match: Step {step}')
 
-        # dead state? yeah it's cooked, bounce
+        # Dead state
+        #
         if state.isempty:
             return {}
 
-        # track dem capture groups like a hawk
-        group_info.step(step.index, step.group)
+        # Track capture groups
+        group_info.step(step.index, step.goto.events)
 
-    # end of input: full match only if we're in accept land
     if not state.isnullable():
         return {}
 
     end_index = len(string)
 
     # finalize match span [0, end_index) and guarantee group 0 exists
+    #
     finalized = group_info.finalize(0, end_index)
 
     return finalized
@@ -272,7 +286,7 @@ def _match_from(start_state, string, offset, *, greedy: bool = True):
             groups, end_index = latest
             return groups, end_index, stop_at
 
-        group_info.step(step.index, step.group)
+        group_info.step(step.index, step.goto.events)
 
         if state.isnullable():
             end_index = step.index + 1

@@ -2,6 +2,8 @@ from .ply import yacc as yacc
 from .ply import lex as lex
 from . import regex
 
+from . import event
+
 import logging
 LOG = logging.getLogger(__file__)
 
@@ -10,10 +12,10 @@ class TokenValue:
         self.value = token.value
         self.kwds = kwds
         
-        group = kwds.get('group', None)
-
-        if group is None:
-            self.kwds['group'] = tuple(token.lexer.groups)
+        if token.lexer.events:
+            self.kwds['events'] = tuple(token.lexer.events)
+            LOG.debug(self)
+            token.lexer.events = []
 
     def __repr__(self):
         return f'TokenValue({self.value!r}, {self.kwds!r})'
@@ -24,6 +26,7 @@ class Parser:
         self.lexer = lex.lex(module=self, **kwargs)
         self.parser = yacc.yacc(module=self, **kwargs)
         self.lexer.groups = [0]
+        self.lexer.events = []
         self.lexer.group_count = 1
         self.errors = 0
 
@@ -128,6 +131,7 @@ class Parser:
 
     def t_LPAREN(self, t):
         r'\('
+        self.lexer.events.append(event.Event(event.OPEN, self.lexer.group_count))
         t.value = TokenValue(t)
         self.lexer.groups.append(self.lexer.group_count)
         self.lexer.group_count += 1
@@ -135,8 +139,9 @@ class Parser:
 
     def t_RPAREN(self, t):
         r'\)'
-        self.lexer.groups.pop()
+        self.lexer.events.append(event.Event(event.CLOSE, self.lexer.groups[-1]))
         t.value = TokenValue(t)
+        self.lexer.groups.pop()
         return t
 
     def t_LCURLY(self, t):
@@ -322,7 +327,10 @@ class Parser:
     def p_primary_expr(self, p):
         'primary : LPAREN expression RPAREN'
 
-        p[0] = regex.RegexExpr(p[2], **p[1].kwds)
+        expr = regex.RegexExpr(p[2])
+        concat = regex.RegexConcat(regex.RegexMarker(**p[1].kwds), expr)
+
+        p[0] = regex.RegexConcat(concat, regex.RegexMarker(**p[3].kwds))
 
     def p_primary_class(self, p):
         'primary : LSQUARE opt_caret ranges RSQUARE'
