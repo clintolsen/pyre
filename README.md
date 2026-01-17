@@ -111,6 +111,7 @@ print(result2)  # {1: (0, 1), 0: (0, 2)}
       __init__.py
       cli.py
       dfa.py
+      event.py
       parser.py
       pyre
       regex.py
