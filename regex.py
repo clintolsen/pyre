@@ -19,27 +19,14 @@ class Regex:
     '''Base class for all regular expression objects'''
     _instance = {}
 
-    def __new__(cls, *args, group=None, events=(), **kwargs):
+    def __new__(cls, *args, events=(), **kwargs):
         self = super().__new__(cls)
         self.id = '[%d]' % len(Regex._instance)
         self.goto = []
         self.state_number = ''
 
-        self._nullable = None
-
-        if group is None:
-            if args:
-                groups = set()
-                for arg in args:
-                    if hasattr(arg, 'group') and arg.group:
-                        groups.update(arg.group)
-                self.group = tuple(groups) if groups else ()
-            else:
-                self.group = ()
-        else:
-            self.group = group
-
         self.events = events
+        self._nullable = None
         self.isempty = False
         self.isepsilon = False
         self.isstar = False
@@ -93,7 +80,6 @@ class Regex:
             rep += ' 0x%x' % id(self.expr)
         if hasattr(self, 'sym'):
             rep += ' %s' % repr(self.sym)
-        rep += f' group={self.group}'
         rep += f' events={self.events}'
         rep += '>'
 
