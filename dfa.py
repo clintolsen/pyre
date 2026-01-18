@@ -262,29 +262,23 @@ def _match_from(start_state, string, offset, *, greedy: bool = True):
     Run the DFA starting at `offset` and return the best match from that start.
 
     Returns:
-        (groups, end_index, stop_at)
+        (groups, end_index)
 
     Where:
         groups   : dict[group_id] -> list[(start, end)]  (or None if no match)
         end_index: match end (exclusive) (or None)
-        stop_at  : index where the run stopped:
-                    - if it died: the index that produced ∅
-                    - if it hit EOF: the last processed index (or None if no chars processed)
     """
     group_info = GroupInfo()
     latest = None  # (groups, end_index)
-    last_step_index = None
 
     for step in dfa_run(start_state, string, start_index=offset):
-        last_step_index = step.index
         state = step.state
 
         if state.isempty:
-            stop_at = step.index
             if latest is None:
-                return None, None, stop_at
+                return None, None
             groups, end_index = latest
-            return groups, end_index, stop_at
+            return groups, end_index
 
         group_info.step(step.index, step.goto.events)
 
@@ -294,14 +288,22 @@ def _match_from(start_state, string, offset, *, greedy: bool = True):
             latest = (groups, end_index)
 
             if not greedy:
-                return groups, end_index, None
+                return groups, end_index
 
     # EOF
     if latest is None:
-        return None, None, last_step_index
+        return None, None
     groups, end_index = latest
-    return groups, end_index, last_step_index
+    return groups, end_index
 
+
+# Skip over known bad start characters
+#
+def _advance_(start_state, s, offset):
+    n = len(s)
+    while offset < n and start_state.goto[ord(s[offset])]._next.isempty:
+      offset += 1
+    return offset
 
 def search(expr, string, *, greedy=True, all=False):
     """
@@ -318,38 +320,42 @@ def search(expr, string, *, greedy=True, all=False):
         - otherwise returns {group_id: [(start, end), ...]} where each
           (start, end) is one non-overlapping match for that group.
     """
+
     start_state = compile(expr)
     n = len(string)
 
     if not all:
-        offset = 0
+        offset = _advance_(start_state, string, 0)
         while offset < n:
-            groups, end_index, stop_at = _match_from(
+            groups, end_index = _match_from(
                 start_state, string, offset, greedy=greedy
             )
 
             if groups is not None:
                 return groups
 
-            offset = (stop_at + 1) if stop_at is not None else (offset + 1)
+            # We must restart at the next offset
+            #
+            offset += 1
+            offset = _advance_(start_state, string, offset)
 
         return {}
 
     # all=True: collect non-overlapping matches
     all_groups = {}
-    offset = 0
+    offset = _advance_(start_state, string, 0)
     while offset < n:
-        groups, end_index, stop_at = _match_from(
+        groups, end_index = _match_from(
             start_state, string, offset, greedy=greedy
         )
 
         if groups is None:
-            offset = (stop_at + 1) if stop_at is not None else (offset + 1)
+            offset = _advance_(start_state, string, offset + 1)
             continue
 
         for g_id, intervals in groups.items():
             all_groups.setdefault(g_id, []).extend(intervals)
 
-        offset = end_index
+        offset = _advance_(start_state, string, end_index)
 
     return all_groups
