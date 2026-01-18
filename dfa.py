@@ -336,8 +336,7 @@ def search(expr, string, *, greedy=True, all=False):
 
             # We must restart at the next offset
             #
-            offset += 1
-            offset = _advance_(start_state, string, offset)
+            offset = _advance_(start_state, string, offset + 1)
 
         return {}
 
