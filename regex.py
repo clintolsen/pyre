@@ -242,17 +242,21 @@ class RegexSym(Regex):
     def __new__(cls, sym, negate=False, **kwargs):
         full_mask = CHARSET_MAX - 1
 
-        # Compute a raw mask from the incoming "sym"
-        if isinstance(sym, CharSet):
-            raw_mask = 0
-            for m in sym.charset:
-                raw_mask |= m
+        if isinstance(sym, int):
+            # Mask
+            #
+            raw_mask = sym
             display_sym = None
         else:
+            # Single character
+            #
+            if len(sym) != 1:
+                raise ValueError("RegexSym expects a single character string")
             raw_mask = 1 << ord(sym)
             display_sym = sym
 
-        # Normalize: mask always means "the set we match"
+        raw_mask &= full_mask
+
         match_mask = (full_mask ^ raw_mask) if negate else raw_mask
 
         key = (cls, match_mask, frozenset(kwargs.items()))
@@ -261,7 +265,6 @@ class RegexSym(Regex):
             self.mask = match_mask
             self.sym = display_sym
             self.negate = negate
-
             self.charset = CharSet(match_mask, full_mask ^ match_mask)
 
         return cls._intern(key, init)

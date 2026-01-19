@@ -52,7 +52,12 @@ class Parser:
         'AND',
         'OR',
         'MINUS',
-        'DIGITS',
+        'DIGIT',
+        'NOTDIGIT',
+        'SPACE',
+        'NOTSPACE',
+        'WORD',
+        'NOTWORD',
         'EPSILON',
         'ESCAPED',
         'ID'
@@ -74,15 +79,35 @@ class Parser:
         t.value = TokenValue(t)
         return t
 
-    def t_ESCAPED(self, t):
-        r'\\[^d]'
-        t.value = TokenValue(t)
-        return t
-
-    def t_DIGITS(self, t):
+    def t_DIGIT(self, t):
         r'\\d'
         t.value = TokenValue(t)
         return t
+
+    def t_NOTDIGIT(self, t):
+        r'\\D'
+        t.value = TokenValue(t)
+        return t
+
+    def t_SPACE(self, t):
+        r'\\s'
+        t.value = TokenValue(t)
+        return t
+
+    def t_NOTSPACE(self, t):
+        r'\\S'
+        t.value = TokenValue(t)
+        return t
+
+    def t_WORD(self, t):
+        r'\\w'
+        t.value = TokenValue(t)
+        return t
+
+    def t_NOTWORD(self, t):
+        r'\\W'
+        t.value = TokenValue(t)
+        return t    
 
     def t_CARET(self, t):
         r'\^'
@@ -147,6 +172,11 @@ class Parser:
     def t_LCURLY(self, t):
         r'\{'
         t.lexer.begin('repeat')
+        return t
+
+    def t_ESCAPED(self, t):
+        r'\\.'
+        t.value = TokenValue(t)
         return t
 
     t_repeat_ignore = ' \t'
@@ -309,16 +339,49 @@ class Parser:
                     else:
                         p[0] = regex.RegexOr(p[0], cat)
 
+    _DIGIT_MASK = 0
+    for code in range(ord('0'), ord('9') + 1):
+        _DIGIT_MASK |= 1 << code
+
     def p_primary_digits(self, p):
-        'primary : DIGITS'
+        'primary : DIGIT'
 
-        mask = 0
-        for code in range(ord('0'), ord('9') + 1):
-            mask |= 1 << code
+        p[0] = regex.RegexSym(Parser._DIGIT_MASK, **p[1].kwds)
 
-        charset = regex.CharSet(mask)
+    def p_primary_notdigit(self, p):
+        'primary : NOTDIGIT'
 
-        p[0] = regex.RegexSym(charset, **p[1].kwds)
+        p[0] = regex.RegexSym(Parser._DIGIT_MASK, negate=True, **p[1].kwds)
+
+    _SPACE_MASK = 0
+    for ch in (' ', '\t', '\n', '\r', '\v', '\f'):
+        _SPACE_MASK |= 1 << ord(ch)
+
+    _WORD_MASK = 0
+    for c in range(ord('A'), ord('Z') + 1):
+        _WORD_MASK |= 1 << c
+    for c in range(ord('a'), ord('z') + 1):
+        _WORD_MASK |= 1 << c
+    _WORD_MASK |= _DIGIT_MASK
+    _WORD_MASK |= 1 << ord('_')
+
+    def p_primary_word(self, p):
+        'primary : WORD'
+        p[0] = regex.RegexSym(Parser._WORD_MASK, **p[1].kwds)
+
+    def p_primary_notword(self, p):
+        'primary : NOTWORD'
+        p[0] = regex.RegexSym(Parser._WORD_MASK, negate=True, **p[1].kwds)
+
+    def p_primary_space(self, p):
+        'primary : SPACE'
+        
+        p[0] = regex.RegexSym(Parser._SPACE_MASK, **p[1].kwds)
+
+    def p_primary_notspace(self, p):
+        'primary : NOTSPACE'
+
+        p[0] = regex.RegexSym(Parser._SPACE_MASK, negate=True, **p[1].kwds)
 
     def p_primary_id(self, p):
         'primary : literal'
@@ -343,15 +406,13 @@ class Parser:
         for ch, _kwds in items:
             mask |= 1 << ord(ch)
 
-        charset = regex.CharSet(mask)
-
         # Reuse the kwds from the first item (escape flags etc.)
         #
         kwds = items[0][1] if items else {}
 
         # One RegexSym that represents the whole class, possibly negated
         # 
-        p[0] = regex.RegexSym(charset, negate=negate, **kwds)
+        p[0] = regex.RegexSym(mask, negate=negate, **kwds)
 
     def p_class_inversion(self, p):
         'opt_caret : CARET'
