@@ -119,6 +119,11 @@ print(result2)  # {1: (0, 1), 0: (0, 2)}
       test/
         __init__.py
         test_basic.py
+        test_boolean.py
+        test_capture.py
+        test_common.py
+        test_repeat.py
+
 
 ---
 
