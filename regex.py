@@ -239,7 +239,7 @@ class RegexSym(Regex):
     If 'negate' is True, this matches any character NOT in the set.
     '''
 
-    def __new__(cls, sym, escape=False, negate=False, **kwargs):
+    def __new__(cls, sym, negate=False, **kwargs):
         full_mask = CHARSET_MAX - 1
 
         # Compute a raw mask from the incoming "sym"
@@ -255,13 +255,10 @@ class RegexSym(Regex):
         # Normalize: mask always means "the set we match"
         match_mask = (full_mask ^ raw_mask) if negate else raw_mask
 
-        # Key should reflect semantic identity: what chars it matches
-        # (escape is print-only unless you use it semantically)
-        key = (cls, match_mask, escape, frozenset(kwargs.items()))
+        key = (cls, match_mask, frozenset(kwargs.items()))
 
         def init(self):
             self.mask = match_mask
-            self.escape = escape
             self.sym = display_sym
             self.negate = negate
 

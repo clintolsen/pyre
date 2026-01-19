@@ -411,7 +411,7 @@ class Parser:
         if p[1].value in ctrl:
             p[0] = regex.RegexSym(ctrl[p[1].value], **p[1].kwds)
         else:
-            p[0] = regex.RegexSym(p[1].value[1], escape=True, **p[1].kwds)
+            p[0] = regex.RegexSym(p[1].value[1], **p[1].kwds)
 
     def p_literal_epsilon(self, p):
         'literal : EPSILON'
