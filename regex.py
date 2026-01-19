@@ -18,34 +18,42 @@ CHARSET_MAX = (1 << 256)
 class Regex:
     '''Base class for all regular expression objects'''
     _instance = {}
+    _id_count = 0
 
-    def __new__(cls, *args, events=(), **kwargs):
-        self = super().__new__(cls)
-        self.id = '[%d]' % len(Regex._instance)
-        self.goto = []
-        self.state_number = ''
+    @classmethod
+    def _intern(cls, key, init):
+        """
+        init(self) should set all subclass-specific attributes.
+        This method handles caching + all base defaults exactly once.
+        """
+        try:
+            return Regex._instance[key]
+        except KeyError:
+            self = object.__new__(cls)
+            self.key = key
 
-        self.events = events
-        self._nullable = None
-        self.isempty = False
-        self.isepsilon = False
-        self.isstar = False
-        self.isany = False
-        self.isdot = False
-        self.isplus = False
-        self.isexpr = False
-        self.isnot = False
-        self.ismarker = False
+            self.id = len(Regex._instance)
 
-        return self
+            self._nullable = None
+            self.events = ()
+            self.goto = []
+            self.state_number = None
 
-    def __init__(self, *args, **kwargs):
-        # For attributes that are invariant over all classes, do that here.
-        # Unfortunately, Python will call init even for recycled items, so always
-        # check for the attribute already being set.
-        #
-        if not hasattr(self, '_hashval'):
-            self._hashval = hash(self.key)
+            self.isempty = False
+            self.isepsilon = False
+            self.ismarker = False
+            self.isstar = False
+            self.isplus = False
+            self.isopt = False
+            self.isexpr = False
+            self.isdot = False
+            self.isany = False
+            self.isnot = False
+
+            init(self)
+
+            Regex._instance[key] = self
+            return self
 
     def nullable(self):
         return RegexEmpty()
@@ -56,9 +64,7 @@ class Regex:
     def derive(self, ch, states, negate_states=False):
         raise Exception('derive')
 
-    def __hash__(self):
-        return self._hashval
-
+    __hash__ = object.__hash__
     def __eq__(self, other):
         return self is other
 
@@ -178,22 +184,13 @@ class RegexEmpty(Regex):
     sym = '∅'
 
     def __new__(cls, **kwargs):
-
         key = (cls, frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, **kwargs)
-            self.key = key
-            # Full charset: all bits set in the supported range.
-            #
-            full_mask = CHARSET_MAX - 1
-            self.charset = CharSet(full_mask)
+        def init(self):
+            self.charset = CharSet(CHARSET_MAX - 1)
             self.isempty = True
-            Regex._instance[key] = self
 
-        return self
+        return cls._intern(key, init)
 
     def derive(self, ch, states, negate_states=False):
         return self
@@ -214,19 +211,12 @@ class RegexEpsilon(Regex):
     def __new__(cls, **kwargs):
         key = (cls, frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, **kwargs)
-            # Full charset: all bits set in the supported range.
-            #
-            full_mask = CHARSET_MAX - 1
-            self.charset = CharSet(full_mask)
-            self.key = key
+        def init(self):
+            self.charset = CharSet(CHARSET_MAX - 1)
             self.isepsilon = True
-            Regex._instance[key] = self
+            return self
 
-        return self
+        return cls._intern(key, init)
 
     def nullable(self):
         return self
@@ -236,7 +226,6 @@ class RegexEpsilon(Regex):
 
     def __str__(self):
         return 'ε'
-
 
 class RegexSym(Regex):
     '''
@@ -250,46 +239,40 @@ class RegexSym(Regex):
     If 'negate' is True, this matches any character NOT in the set.
     '''
 
-    def __new__(cls, sym, negate=False, **kwargs):
-        escape = kwargs.get('escape', False)
-
-        # Build the positive mask S
-        if isinstance(sym, CharSet):
-            mask = 0
-            for m in sym.charset:
-                mask |= m
-            display_sym = None
-        else:
-            mask = 1 << ord(sym)
-            display_sym = sym
-
+    def __new__(cls, sym, escape=False, negate=False, **kwargs):
         full_mask = CHARSET_MAX - 1
 
-        # For partitioning: always split into S and its complement
-        part_masks = [mask, full_mask ^ mask]
-        charset = CharSet(*part_masks)
+        # Compute a raw mask from the incoming "sym"
+        if isinstance(sym, CharSet):
+            raw_mask = 0
+            for m in sym.charset:
+                raw_mask |= m
+            display_sym = None
+        else:
+            raw_mask = 1 << ord(sym)
+            display_sym = sym
 
-        key = (cls, mask, negate, frozenset(kwargs.items()))
+        # Normalize: mask always means "the set we match"
+        match_mask = (full_mask ^ raw_mask) if negate else raw_mask
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, sym, **kwargs)
-            self.key = key
-            self.mask = mask            # semantic positive set
-            self.charset = charset      # partitioning masks
-            self.sym = display_sym
+        # Key should reflect semantic identity: what chars it matches
+        # (escape is print-only unless you use it semantically)
+        key = (cls, match_mask, escape, frozenset(kwargs.items()))
+
+        def init(self):
+            self.mask = match_mask
             self.escape = escape
-            self.negate = negate        # used only by derive()
-            Regex._instance[key] = self
+            self.sym = display_sym
+            self.negate = negate
 
-        return self
+            self.charset = CharSet(match_mask, full_mask ^ match_mask)
+
+        return cls._intern(key, init)
+
 
     def derive(self, ch, states, negate_states=False):
         bit = 1 << ord(ch)
-        in_set = bool(self.mask & bit)
-
-        match = (not self.negate and in_set) or (self.negate and not in_set)
+        match = bool(self.mask & bit)
 
         if match != negate_states:
             states.add(self)
@@ -299,42 +282,7 @@ class RegexSym(Regex):
         return RegexEmpty()
 
     def __str__(self):
-        # Single literal, non-negated: keep the simple path
-        #
-        if self.sym is not None and not self.negate:
-            meta = '[]^+*?'
-            bracket = self.escape or (self.sym[-1] in meta)
-
-            val = '[' if bracket else ''
-            val += self.sym
-            val += ']' if bracket else ''
-
-            return val if self.sym.isprintable() else repr(self.sym)
-
-        # Build a CharSet from the *semantic* mask only
-        #
-        mask_charset = CharSet(self.mask)
-        intervals = mask_charset.get_chr_sets()   # [[['c']], ...] etc.
-        parts = []
-
-        for mask_intervals in intervals:
-            for iv in mask_intervals:
-                if len(iv) == 1:
-                    parts.append(self._fmt_char(iv[0]))
-                else:
-                    lo, hi = iv
-                    parts.append(f"{self._fmt_char(lo)} - {self._fmt_char(hi)}")
-
-        inside = ', '.join(parts)
-        return f"[^ {inside}]" if self.negate else f"[{inside}]"
-
-    @staticmethod
-    def _fmt_char(ch: str) -> str:
-        """Format a character safely for display."""
-        if ch.isprintable() and ch not in ["'", "\\"]:
-            return ch
-        return f"\\x{ord(ch):02x}"
-
+        return CharSet.fmt_mask(self.mask, bracket=False)
 
 class RegexOr(Regex):
     '''Set union (OR): r | s - Match RE r or RE s
@@ -379,17 +327,12 @@ class RegexOr(Regex):
         args_u = args_l | args_r
         key = (cls, frozenset(args_u), frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, left, right, **kwargs)
-            self.key = key
+        def init(self):
             self.left = left
             self.right = right
             self.charset = self.left.charset & self.right.charset
-            Regex._instance[key] = self
 
-        return self
+        return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
@@ -441,18 +384,12 @@ class RegexXor(Regex):
 
         key = (cls, frozenset((left, right)), frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, left, right, **kwargs)
-            self.key = key
+        def init(self):
             self.left = left
             self.right = right
             self.charset = self.left.charset & self.right.charset
 
-            Regex._instance[key] = self
-
-        return self
+        return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
@@ -515,18 +452,12 @@ class RegexAnd(Regex):
         args_u = args_l | args_r
         key = (cls, frozenset(args_u), frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, left, right, **kwargs)
-            self.key = key
+        def init(self):
             self.left = left
             self.right = right
             self.charset = self.left.charset & self.right.charset
 
-            Regex._instance[key] = self
-
-        return self
+        return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
@@ -569,19 +500,13 @@ class RegexStar(Regex):
 
         key = (cls, expr, frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, expr, **kwargs)
-            self.key = key
+        def init(self):
             self.expr = expr
             self.charset = self.expr.charset
             self.isstar = True
             self.isany = self.expr.isdot
 
-            Regex._instance[key] = self
-
-        return self
+        return cls._intern(key, init)
 
     def nullable(self):
         return RegexEpsilon()
@@ -606,7 +531,6 @@ class RegexPlus(Regex):
     sym = '+'
 
     def __new__(cls, expr, **kwargs):
-
         # 1) (r+)+ ≈ r+
         #
         if expr.isplus:
@@ -614,17 +538,12 @@ class RegexPlus(Regex):
 
         key = (cls, expr, frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, expr, **kwargs)
-            self.key = key
+        def init(self):
             self.expr = expr
             self.charset = self.expr.charset
             self.isplus = True
-            Regex._instance[key] = self
 
-        return self
+        return cls._intern(key, init)
 
     def nullable(self):
         return self.expr.nullable()
@@ -651,16 +570,11 @@ class RegexOpt(Regex):
     def __new__(cls, expr, **kwargs):
         key = (cls, expr, frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, **kwargs)
-            self.key = key
+        def init(self):
             self.expr = expr
             self.charset = self.expr.charset
-            Regex._instance[key] = self
 
-        return self
+        return cls._intern(key, init)
 
     def nullable(self):
         return RegexEpsilon()
@@ -687,19 +601,11 @@ class RegexDot(Regex):
     def __new__(cls, **kwargs):
         key = (cls, frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, **kwargs)
-            self.key = key
-            # Full charset: all bits set in the supported range.
-            #
-            full_mask = CHARSET_MAX - 1
-            self.charset = CharSet(full_mask)
+        def init(self):
+            self.charset = CharSet(CHARSET_MAX - 1)
             self.isdot = True
-            Regex._instance[key] = self
 
-        return self
+        return cls._intern(key, init)
 
     def derive(self, ch, states, negate_states=False):
         if not negate_states:
@@ -739,11 +645,7 @@ class RegexConcat(Regex):
         args = [*Regex.get_args(left, RegexConcat), *Regex.get_args(right, RegexConcat)]
         key = (cls, *args, frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, left, right, **kwargs)
-            self.key = key
+        def init(self):
             self.left = left
             self.right = right
             if self.left.isnullable():
@@ -751,9 +653,7 @@ class RegexConcat(Regex):
             else:
                 self.charset = self.left.charset
 
-            Regex._instance[key] = self
-
-        return self
+        return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
@@ -849,17 +749,12 @@ class RegexDiff(Regex):
 
         key = (cls, left, right, frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, left, right, **kwargs)
-            self.key = key
+        def init(self):
             self.left = left
             self.right = right
             self.charset = self.left.charset & self.right.charset
-            Regex._instance[key] = self
 
-        return self
+        return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
@@ -898,18 +793,13 @@ class RegexNot(Regex):
 
         key = (cls, expr, frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, expr, **kwargs)
-            self.key = key
+        def init(self):
             self.expr = expr
             self.charset = self.expr.charset
             self.isany = self.expr.isempty
             self.isnot = True
-            Regex._instance[key] = self
 
-        return self
+        return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
@@ -951,17 +841,12 @@ class RegexExpr(Regex):
 
         key = (cls, expr, frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, expr, **kwargs)
-            self.key = key
+        def init(self):
             self.expr = expr
             self.charset = self.expr.charset
             self.isexpr = True
-            Regex._instance[key] = self
 
-        return self
+        return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
@@ -983,23 +868,18 @@ class RegexMarker(Regex):
     """
     A zero-width marker node that doesn't consume input but carries events.
     """
-    sym = 'M'
+    sym = '⟂'
     
     def __new__(cls, events=(), **kwargs):
         key = (cls, tuple(events), frozenset(kwargs.items()))
 
-        try:
-            self = Regex._instance[key]
-        except KeyError:
-            self = super().__new__(cls, events=events, **kwargs)
-            full_mask = CHARSET_MAX - 1
-            self.charset = CharSet(full_mask)
-            self.key = key
+        def init(self):
+            self.charset = CharSet(CHARSET_MAX - 1)
+            self.events = events
             self.ismarker = True
-            Regex._instance[key] = self
         
-        return self
-    
+        return cls._intern(key, init)
+
     def nullable(self):
         return RegexEpsilon()
     
@@ -1011,7 +891,7 @@ class RegexMarker(Regex):
         return {self}
 
     def __str__(self):
-        return 'M'
+        return RegexMarker.sym
 
 class CharSet:
     """
@@ -1041,6 +921,67 @@ class CharSet:
                     out.add(x)
 
         self.charset = out
+
+    @classmethod
+    def fmt_mask(cls, mask: int, *, bracket: bool = True) -> str:
+        full = CHARSET_MAX - 1
+        mask &= full
+
+        # ayyo: empty set, no chars, no mercy
+        if mask == 0:
+            return "[]" if bracket else ""
+
+        # ayyy: full coverage, whole dang byte range
+        if mask == full:
+            inside = r"\x00-\xff"
+            return f"[{inside}]" if bracket else inside
+
+        inside = cls._fmt_mask_inside(mask)
+        return f"[{inside}]" if bracket else inside
+
+    @classmethod
+    def _fmt_mask_inside(cls, mask: int) -> str:
+        """
+        Return ONLY the inside of a regex char class (no brackets),
+        e.g. 'a-z0-9' or '\\x00-`b-\\xff'
+        """
+        groups = CharSet(mask).get_chr_sets()
+        parts: list[str] = []
+        for group in groups:
+            # group is like [['a'], ['d','z']]
+            parts.append(cls.fmt_ranges(group, sep=""))
+        return "".join(parts)
+
+    @staticmethod
+    def fmt_ranges(ranges, *, sep: str = "") -> str:
+        """
+        ranges: list like [['a'], ['d','z']] (chars) OR [(97,), (100,122)] (ints)
+        sep:
+          - ''  => regex-class style (no commas)
+          - ', '=> debug/human style
+        """
+        parts = []
+        for rng in ranges:
+            if len(rng) == 2:
+                parts.append(f"{CharSet._fmt_char(rng[0])}-{CharSet._fmt_char(rng[1])}")
+            else:
+                parts.append(f"{CharSet._fmt_char(rng[0])}")
+        return sep.join(parts)
+    
+
+    @staticmethod
+    def _fmt_char(code: int | str) -> str:
+        if isinstance(code, int):
+            ch = chr(code)
+            val = code
+        else:
+            ch = code
+            val = ord(ch)
+    
+        if ch.isprintable() and ch not in ("\\", "]", "-", "^"):
+            return ch
+    
+        return f"\\x{val:02x}"
 
     def add(self, item: int) -> None:
         """Wrapper for add() that ignores 0"""

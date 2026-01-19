@@ -39,14 +39,6 @@ class Goto:
         return f'{self}'
 
 
-def make_char(code):
-    char = chr(code)
-
-    if not char.isprintable():
-        char = repr(char)
-
-    return char
-
 def compile(expr):
     ''' Construct a DFA from a regular expression '''
     null_state = regex.RegexEmpty()
@@ -75,7 +67,7 @@ def compile(expr):
                 next_state = current_state.derive(char, accept)
 
                 LOG.debug(f'Derivative of {current_state.state_number} of {repr(char)} => {next_state}')
-                LOG.debug(f'Transition for {[make_char(x) for x in charset[0]]} is {accept}')
+                LOG.debug(f'Transition for {[regex.CharSet._fmt_char(x) for x in charset[0]]} is {accept}')
 
                 goto = Goto(next_state, accept)
                 LOG.debug(f'Goto events: {goto.events}')
@@ -101,19 +93,9 @@ def compile(expr):
 
             for charset in classes:
                 if charset:
-                    print('    [', end='')
-                    goto = state.goto[charset[0][0]]
-                    for i, rng in enumerate(charset):
-                        # Separator
-                        #
-                        if i:
-                            print(', ', end='')
-                        if len(rng) == 2:
-                            print('%s - %s' % (make_char(rng[0]), make_char(rng[1])), end='')
-                        else:
-                            print('%s' % (make_char(rng[0])), end='')
-
-                    print(f'] {goto}')
+                   goto = state.goto[charset[0][0]]
+                   inside = regex.CharSet.fmt_ranges(charset)
+                   print(f"    [{inside}] {goto}")
 
     LOG.debug('Total DFA states: %d' % len(dfa_states))
     LOG.debug('Total RE instances: %d' % len(regex.Regex._instance))
@@ -299,7 +281,7 @@ def _match_from(start_state, string, offset, *, greedy: bool = True):
 
 # Skip over known bad start characters
 #
-def _advance_(start_state, s, offset):
+def _skip(start_state, s, offset):
     n = len(s)
     while offset < n and start_state.goto[ord(s[offset])]._next.isempty:
       offset += 1
@@ -325,7 +307,7 @@ def search(expr, string, *, greedy=True, all=False):
     n = len(string)
 
     if not all:
-        offset = _advance_(start_state, string, 0)
+        offset = _skip(start_state, string, 0)
         while offset < n:
             groups, end_index = _match_from(
                 start_state, string, offset, greedy=greedy
@@ -336,25 +318,25 @@ def search(expr, string, *, greedy=True, all=False):
 
             # We must restart at the next offset
             #
-            offset = _advance_(start_state, string, offset + 1)
+            offset = _skip(start_state, string, offset + 1)
 
         return {}
 
     # all=True: collect non-overlapping matches
     all_groups = {}
-    offset = _advance_(start_state, string, 0)
+    offset = _skip(start_state, string, 0)
     while offset < n:
         groups, end_index = _match_from(
             start_state, string, offset, greedy=greedy
         )
 
         if groups is None:
-            offset = _advance_(start_state, string, offset + 1)
+            offset = _skip(start_state, string, offset + 1)
             continue
 
         for g_id, intervals in groups.items():
             all_groups.setdefault(g_id, []).extend(intervals)
 
-        offset = _advance_(start_state, string, end_index)
+        offset = _skip(start_state, string, end_index)
 
     return all_groups
