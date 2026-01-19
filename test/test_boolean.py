@@ -8,9 +8,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from pyre import Parser
+import pyre
 from test_common import RegexTestCase
-import pyre.dfa as dfa
 
 class TestBooleanOps(RegexTestCase):
     """
@@ -23,12 +22,8 @@ class TestBooleanOps(RegexTestCase):
     These are checked against the intended language semantics,
     not Python's re module (which doesn't support them).
     """
-
-    # Small helper: full-string match using pyre
     def fullmatch(self, pattern, text):
-        parser = Parser()
-        expr = parser.parse(pattern)
-        groups = dfa.match(expr, text)
+        groups = pyre.match(pattern, text)
         return bool(groups)
 
     # --- AND: r & s  ------------------------------------------------------

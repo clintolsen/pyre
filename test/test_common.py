@@ -10,8 +10,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from pyre import Parser
-import pyre.dfa as dfa
-
+import pyre
 
 class RegexTestCase(unittest.TestCase):
     """
@@ -35,7 +34,7 @@ class RegexTestCase(unittest.TestCase):
         """
         expr = self.compile(pattern)
 
-        result = dfa.match(expr, text)
+        result = pyre.match(expr, text)
         bool_result = bool(result)
 
         re_bool = re.fullmatch(pattern, text) is not None
@@ -52,7 +51,7 @@ class RegexTestCase(unittest.TestCase):
         Only checks whether a match exists — not capture contents.
         """
         expr = self.compile(pattern)
-        result = dfa.search(expr, text)
+        result = pyre.search(expr, text)
         bool_result = bool(result)
         re_bool = re.search(pattern, text) is not None
         self.assertEqual(
