@@ -198,7 +198,15 @@ def dfa_run(start_state, text, start_index=0):
         state = next_state
 
 
-def match(expr, string):
+def match(expr, string, *, greedy=True):
+    start_state = compile(expr)
+    end_index = _span_from(start_state, string, 0, greedy=greedy)
+    if end_index is None:
+        return {}
+    return _match_to_end(start_state, string, 0, end_index)
+
+
+def fullmatch(expr, string):
     """
     Full-string match of `expr` against `string`.
 
@@ -238,47 +246,6 @@ def match(expr, string):
 
     return finalized
 
-
-def _match_from(start_state, string, offset, *, greedy: bool = True):
-    """
-    Run the DFA starting at `offset` and return the best match from that start.
-
-    Returns:
-        (groups, end_index)
-
-    Where:
-        groups   : dict[group_id] -> list[(start, end)]  (or None if no match)
-        end_index: match end (exclusive) (or None)
-    """
-    group_info = GroupInfo()
-    latest = None  # (groups, end_index)
-
-    for step in dfa_run(start_state, string, start_index=offset):
-        state = step.state
-
-        if state.isempty:
-            if latest is None:
-                return None, None
-            groups, end_index = latest
-            return groups, end_index
-
-        group_info.step(step.index, step.goto.events)
-
-        if state.isnullable():
-            end_index = step.index + 1
-            groups = group_info.finalize(offset, end_index)
-            latest = (groups, end_index)
-
-            if not greedy:
-                return groups, end_index
-
-    # EOF
-    if latest is None:
-        return None, None
-    groups, end_index = latest
-    return groups, end_index
-
-
 # Skip over known bad start characters
 #
 def _skip(start_state, s, offset):
@@ -286,6 +253,45 @@ def _skip(start_state, s, offset):
     while offset < n and start_state.goto[ord(s[offset])]._next.isempty:
       offset += 1
     return offset
+
+def _span_from(start_state, string, offset, *, greedy=True):
+    """
+    Return the best end index (exclusive) of a match starting at offset,
+    or None if no match.
+    """
+    latest_end = None
+
+    for step in dfa_run(start_state, string, start_index=offset):
+        state = step.state
+
+        if state.isempty:
+            return latest_end
+
+        if state.isnullable():
+            latest_end = step.index + 1
+            if not greedy:
+                return latest_end
+
+    return latest_end
+
+def _match_to_end(start_state, string, offset, end_index):
+    """
+    Run DFA from offset up to end_index and compute capture groups.
+    """
+    group_info = GroupInfo()
+
+    for step in dfa_run(start_state, string, start_index=offset):
+        # Stop once we reach the chosen end
+        if step.index >= end_index:
+            break
+
+        state = step.state
+        if state.isempty:
+            break  # shouldn't normally happen if span was valid
+
+        group_info.step(step.index, step.goto.events)
+
+    return group_info.finalize(offset, end_index)
 
 def search(expr, string, *, greedy=True, all=False):
     """
@@ -302,40 +308,42 @@ def search(expr, string, *, greedy=True, all=False):
         - otherwise returns {group_id: [(start, end), ...]} where each
           (start, end) is one non-overlapping match for that group.
     """
-
     start_state = compile(expr)
     n = len(string)
 
     if not all:
         offset = _skip(start_state, string, 0)
         while offset < n:
-            groups, end_index = _match_from(
+            end_index = _span_from(
                 start_state, string, offset, greedy=greedy
             )
 
-            if groups is not None:
-                return groups
+            if end_index is not None:
+                return _match_to_end(
+                    start_state, string, offset, end_index
+                )
 
-            # We must restart at the next offset
-            #
             offset = _skip(start_state, string, offset + 1)
 
         return {}
-
-    # all=True: collect non-overlapping matches
     all_groups = {}
     offset = _skip(start_state, string, 0)
+
     while offset < n:
-        groups, end_index = _match_from(
+        end_index = _span_from(
             start_state, string, offset, greedy=greedy
         )
 
-        if groups is None:
+        if end_index is None:
             offset = _skip(start_state, string, offset + 1)
             continue
 
-        for g_id, intervals in groups.items():
-            all_groups.setdefault(g_id, []).extend(intervals)
+        groups = _match_to_end(
+            start_state, string, offset, end_index
+        )
+
+        for gid, intervals in groups.items():
+            all_groups.setdefault(gid, []).extend(intervals)
 
         offset = _skip(start_state, string, end_index)
 

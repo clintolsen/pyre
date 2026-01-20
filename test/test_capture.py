@@ -17,35 +17,35 @@ class TestCaptureGroups(RegexTestCase):
     def test_simple_capture(self):
         """Basic capture group: (a)"""
         expr = self.compile("(a)")
-        result = pyre.match(expr, "a")
+        result = pyre.fullmatch(expr, "a")
         
-        # Group 0 = full match, Group 1 = capture group
+        # Group 0 = full fullmatch, Group 1 = capture group
         self.assertEqual(result[0], [(0, 1)])
         self.assertEqual(result[1], [(0, 1)])
 
     def test_capture_in_sequence(self):
         """Capture group in a sequence: (a)b"""
         expr = self.compile("(a)b")
-        result = pyre.match(expr, "ab")
+        result = pyre.fullmatch(expr, "ab")
         
-        self.assertEqual(result[0], [(0, 2)])  # Full match: "ab"
+        self.assertEqual(result[0], [(0, 2)])  # Full fullmatch: "ab"
         self.assertEqual(result[1], [(0, 1)])  # Group 1: "a"
 
     def test_multiple_captures(self):
         """Multiple capture groups: (a)(b)"""
         expr = self.compile("(a)(b)")
-        result = pyre.match(expr, "ab")
+        result = pyre.fullmatch(expr, "ab")
         
-        self.assertEqual(result[0], [(0, 2)])  # Full match
+        self.assertEqual(result[0], [(0, 2)])  # Full fullmatch
         self.assertEqual(result[1], [(0, 1)])  # Group 1: "a"
         self.assertEqual(result[2], [(1, 2)])  # Group 2: "b"
 
     def test_nested_captures(self):
         """Nested capture groups: ((a)b)"""
         expr = self.compile("((a)b)")
-        result = pyre.match(expr, "ab")
+        result = pyre.fullmatch(expr, "ab")
         
-        self.assertEqual(result[0], [(0, 2)])  # Full match: "ab"
+        self.assertEqual(result[0], [(0, 2)])  # Full fullmatch: "ab"
         self.assertEqual(result[1], [(0, 2)])  # Outer group: "ab"
         self.assertEqual(result[2], [(0, 1)])  # Inner group: "a"
 
@@ -53,18 +53,18 @@ class TestCaptureGroups(RegexTestCase):
         """Capture group with repetition: (ab)*"""
         expr = self.compile("(ab)*")
         
-        # Empty string - group 0 matches, group 1 doesn't
-        result = pyre.match(expr, "")
+        # Empty string - group 0 fullmatches, group 1 doesn't
+        result = pyre.fullmatch(expr, "")
         self.assertEqual(result[0], [(0, 0)])
         self.assertNotIn(1, result)
         
-        # Single match
-        result = pyre.match(expr, "ab")
+        # Single fullmatch
+        result = pyre.fullmatch(expr, "ab")
         self.assertEqual(result[0], [(0, 2)])
-        self.assertEqual(result[1], [(0, 2)])  # Last match of (ab)*
+        self.assertEqual(result[1], [(0, 2)])  # Last fullmatch of (ab)*
         
-        # Multiple matches
-        result = pyre.match(expr, "abab")
+        # Multiple fullmatches
+        result = pyre.fullmatch(expr, "abab")
         self.assertEqual(result[0], [(0, 4)])
         # Group 1 should capture the last occurrence
         self.assertEqual(result[1], [(2, 4)])
@@ -73,11 +73,11 @@ class TestCaptureGroups(RegexTestCase):
         """Capture with alternation: (a|b)c"""
         expr = self.compile("(a|b)c")
         
-        result = pyre.match(expr, "ac")
+        result = pyre.fullmatch(expr, "ac")
         self.assertEqual(result[0], [(0, 2)])
         self.assertEqual(result[1], [(0, 1)])  # "a"
         
-        result = pyre.match(expr, "bc")
+        result = pyre.fullmatch(expr, "bc")
         self.assertEqual(result[0], [(0, 2)])
         self.assertEqual(result[1], [(0, 1)])  # "b"
 
@@ -86,16 +86,16 @@ class TestCaptureGroups(RegexTestCase):
         expr = self.compile("(ab)")
         result = pyre.search(expr, "xxabxx", all=True)
         
-        self.assertEqual(result[0], [(2, 4)])  # Full match at position 2
+        self.assertEqual(result[0], [(2, 4)])  # Full fullmatch at position 2
         self.assertEqual(result[1], [(2, 4)])  # Group 1 at position 2
 
-    def test_multiple_matches_with_captures(self):
-        """Multiple matches with capture groups"""
+    def test_multiple_fullmatches_with_captures(self):
+        """Multiple fullmatches with capture groups"""
         expr = self.compile("(a)(b)")
         result = pyre.search(expr, "abab", all=True)
         
-        # First match: positions 0-2
-        # Second match: positions 2-4
+        # First fullmatch: positions 0-2
+        # Second fullmatch: positions 2-4
         # Note: This depends on your search() implementation
         # You may need to adjust based on how all=True works
         self.assertIn(0, result)
@@ -103,11 +103,11 @@ class TestCaptureGroups(RegexTestCase):
         self.assertIn(2, result)
 
     def test_capture_group_zero(self):
-        """Group 0 always represents the full match"""
+        """Group 0 always represents the full fullmatch"""
         expr = self.compile("(a)")
-        result = pyre.match(expr, "a")
+        result = pyre.fullmatch(expr, "a")
         
-        # Group 0 should always exist and match the full string
+        # Group 0 should always exist and fullmatch the full string
         self.assertIn(0, result)
         self.assertEqual(result[0], [(0, 1)])
 

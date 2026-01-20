@@ -27,14 +27,16 @@ class RegexTestCase(unittest.TestCase):
         )
         return expr
 
+    def fullmatch(self, pattern, text):
+        result = pyre.fullmatch(pattern, text)
+        return bool(result)
+
     def assert_fullmatch_same_as_re(self, pattern, text):
         """
         Compare pyre's full-string match behavior with Python's re.fullmatch.
         Only checks whether a match exists — not capture contents.
         """
-        expr = self.compile(pattern)
-
-        result = pyre.match(expr, text)
+        result = pyre.fullmatch(pattern, text)
         bool_result = bool(result)
 
         re_bool = re.fullmatch(pattern, text) is not None

@@ -3,10 +3,9 @@ import argparse
 from pathlib import Path
 import logging
 
+from . import search, fullmatch
 from . import regex
-from . import dfa
 from . import util
-from .parser import Parser
 
 LOG = logging.getLogger(__file__)
 
@@ -43,21 +42,12 @@ def main(argv=None):
         stream=sys.stdout
     )
 
-    kwargs = {}
-    # kwargs['debug'] = args.debug == logging.DEBUG
-
-    parser = Parser(**kwargs)
-    regexp = parser.parse(args.regex)
-
-    if parser.errors:
-        sys.exit(1)
-
     target = Path(args.target)
     if target.is_file():
         with open(target) as f:
             file = f.read()
 
-        groups = dfa.search(regexp, file, all=args.all, greedy=args.greedy)
+        groups = search(args.regex, file, all=args.all, greedy=args.greedy)
         LOG.debug(f'Groups: {groups}')
         flatten = [interval for group in groups.values() for interval in group]
         intervals = regex.merge_intervals(flatten)
@@ -80,8 +70,5 @@ def main(argv=None):
                 print()
                 break
     else:
-        groups = dfa.match(regexp, args.target)
+        groups = fullmatch(args.regex, args.target)
         print(groups)
-        sys.exit(0)
-
-    sys.exit(1)

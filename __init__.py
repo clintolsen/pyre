@@ -2,7 +2,7 @@
 pyre - A Regular Expression Engine Based on Derivatives
 """
 
-from .dfa import compile as _compile_dfa, match as _match, search as _search
+from .dfa import compile as _compile_dfa, match as _match, fullmatch as _fullmatch, search as _search
 from .parser import Parser
 from . import regex as _regex
 
@@ -31,6 +31,9 @@ def compile(pattern):
 def _ensure_compiled(pattern):
     return compile(pattern)
 
+def fullmatch(pattern, string):
+    compiled = _ensure_compiled(pattern)
+    return _fullmatch(compiled, string)
 
 def match(pattern, string):
     compiled = _ensure_compiled(pattern)
@@ -42,4 +45,4 @@ def search(pattern, string, *, all=False, **kwargs):
     return _search(compiled, string, all=all, **kwargs)
 
 
-__all__ = ['compile', 'match', 'search', 'Parser']
+__all__ = ['compile', 'match', 'fullmatch', 'search', 'Parser']
