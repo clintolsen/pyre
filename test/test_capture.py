@@ -16,8 +16,7 @@ class TestCaptureGroups(RegexTestCase):
 
     def test_simple_capture(self):
         """Basic capture group: (a)"""
-        expr = self.compile("(a)")
-        result = pyre.fullmatch(expr, "a")
+        result = pyre.fullmatch("(a)", "a")
         
         # Group 0 = full fullmatch, Group 1 = capture group
         self.assertEqual(result[0], [(0, 1)])
@@ -25,16 +24,14 @@ class TestCaptureGroups(RegexTestCase):
 
     def test_capture_in_sequence(self):
         """Capture group in a sequence: (a)b"""
-        expr = self.compile("(a)b")
-        result = pyre.fullmatch(expr, "ab")
+        result = pyre.fullmatch("(a)b", "ab")
         
         self.assertEqual(result[0], [(0, 2)])  # Full fullmatch: "ab"
         self.assertEqual(result[1], [(0, 1)])  # Group 1: "a"
 
     def test_multiple_captures(self):
         """Multiple capture groups: (a)(b)"""
-        expr = self.compile("(a)(b)")
-        result = pyre.fullmatch(expr, "ab")
+        result = pyre.fullmatch("(a)(b)", "ab")
         
         self.assertEqual(result[0], [(0, 2)])  # Full fullmatch
         self.assertEqual(result[1], [(0, 1)])  # Group 1: "a"
@@ -42,8 +39,7 @@ class TestCaptureGroups(RegexTestCase):
 
     def test_nested_captures(self):
         """Nested capture groups: ((a)b)"""
-        expr = self.compile("((a)b)")
-        result = pyre.fullmatch(expr, "ab")
+        result = pyre.fullmatch("((a)b)", "ab")
         
         self.assertEqual(result[0], [(0, 2)])  # Full fullmatch: "ab"
         self.assertEqual(result[1], [(0, 2)])  # Outer group: "ab"
@@ -51,48 +47,44 @@ class TestCaptureGroups(RegexTestCase):
 
     def test_capture_with_star(self):
         """Capture group with repetition: (ab)*"""
-        expr = self.compile("(ab)*")
-        
+        pattern = "(ab)*"
         # Empty string - group 0 fullmatches, group 1 doesn't
-        result = pyre.fullmatch(expr, "")
+        result = pyre.fullmatch(pattern, "")
         self.assertEqual(result[0], [(0, 0)])
         self.assertNotIn(1, result)
         
         # Single fullmatch
-        result = pyre.fullmatch(expr, "ab")
+        result = pyre.fullmatch(pattern, "ab")
         self.assertEqual(result[0], [(0, 2)])
         self.assertEqual(result[1], [(0, 2)])  # Last fullmatch of (ab)*
         
         # Multiple fullmatches
-        result = pyre.fullmatch(expr, "abab")
+        result = pyre.fullmatch(pattern, "abab")
         self.assertEqual(result[0], [(0, 4)])
         # Group 1 should capture the last occurrence
         self.assertEqual(result[1], [(2, 4)])
 
     def test_capture_with_alternation(self):
         """Capture with alternation: (a|b)c"""
-        expr = self.compile("(a|b)c")
-        
-        result = pyre.fullmatch(expr, "ac")
+        pattern = "(a|b)c"
+        result = pyre.fullmatch(pattern, "ac")
         self.assertEqual(result[0], [(0, 2)])
         self.assertEqual(result[1], [(0, 1)])  # "a"
         
-        result = pyre.fullmatch(expr, "bc")
+        result = pyre.fullmatch(pattern, "bc")
         self.assertEqual(result[0], [(0, 2)])
         self.assertEqual(result[1], [(0, 1)])  # "b"
 
     def test_search_with_captures(self):
         """Search finds captures at correct positions"""
-        expr = self.compile("(ab)")
-        result = pyre.search(expr, "xxabxx", all=True)
+        result = pyre.search("(ab)", "xxabxx", all=True)
         
         self.assertEqual(result[0], [(2, 4)])  # Full fullmatch at position 2
         self.assertEqual(result[1], [(2, 4)])  # Group 1 at position 2
 
     def test_multiple_fullmatches_with_captures(self):
         """Multiple fullmatches with capture groups"""
-        expr = self.compile("(a)(b)")
-        result = pyre.search(expr, "abab", all=True)
+        result = pyre.search("(a)(b)", "abab", all=True)
         
         # First fullmatch: positions 0-2
         # Second fullmatch: positions 2-4
@@ -104,8 +96,7 @@ class TestCaptureGroups(RegexTestCase):
 
     def test_capture_group_zero(self):
         """Group 0 always represents the full fullmatch"""
-        expr = self.compile("(a)")
-        result = pyre.fullmatch(expr, "a")
+        result = pyre.fullmatch("(a)", "a")
         
         # Group 0 should always exist and fullmatch the full string
         self.assertIn(0, result)

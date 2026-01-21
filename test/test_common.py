@@ -52,8 +52,7 @@ class RegexTestCase(unittest.TestCase):
         Compare pyre's search behavior with Python's re.search.
         Only checks whether a match exists — not capture contents.
         """
-        expr = self.compile(pattern)
-        result = pyre.search(expr, text)
+        result = pyre.search(pattern, text)
         bool_result = bool(result)
         re_bool = re.search(pattern, text) is not None
         self.assertEqual(

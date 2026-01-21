@@ -47,6 +47,7 @@ def compile(expr):
     default_goto = Goto(null_state, set())
 
     initial_state = expr
+    LOG.debug(f'Initial state: {initial_state.tree()}')
     dfa_states = set()
     todo_list = {initial_state}
     from collections import OrderedDict
@@ -58,6 +59,13 @@ def compile(expr):
         classes = current_state.charset.get_int_sets()
         current_state.state_number = 'q%d' % len(dfa_states)
         LOG.debug(f'Current state {current_state.state_number}: {current_state}')
+
+        markers = current_state.prefix_markers()
+        ev = set()
+        for m in markers:
+            ev |= set(m.events)
+        current_state.prefix_events = ev
+
         dfa_states.add(current_state)
         states[current_state] = current_state
         current_state.goto = [default_goto] * 256
@@ -89,7 +97,7 @@ def compile(expr):
             if state.isnullable():
                 state_label = util.highlight(state_label)
 
-            print(f'{state_label}: {state}')
+            print(f'{state_label}: {state} (markers={state.prefix_markers()})')
 
             classes = state.charset.get_int_sets()
 
@@ -281,17 +289,23 @@ def _match_to_end(start_state, string, offset, end_index):
     Run DFA from offset up to end_index and compute capture groups.
     """
     group_info = GroupInfo()
+    last_state = start_state
 
     for step in dfa_run(start_state, string, start_index=offset):
-        # Stop once we reach the chosen end
         if step.index >= end_index:
             break
 
         state = step.state
         if state.isempty:
-            break  # shouldn't normally happen if span was valid
+            break
 
         group_info.step(step.index, step.goto.events)
+        last_state = state
+
+    # apply boundary CLOSE events at the match endpoint
+    close_events = {e for e in last_state.prefix_events if e.kind == event.CLOSE}
+    if close_events:
+        group_info.step(end_index, close_events)
 
     return group_info.finalize(offset, end_index)
 
@@ -350,32 +364,3 @@ def search(expr, string, *, greedy=True, all=False):
         offset = _skip(start_state, string, end_index)
 
     return all_groups
-
-def search2(expr, string, *, greedy=True, all=False):
-    """
-    Search for `expr` in `string`.
-    """
-    parser = Parser()
-    parsed = parser.parse(f'.* ({expr})')
-    group_info = GroupInfo()
-
-    if parser.errors:
-        raise ValueError(f"Invalid regex: {expr}")
-
-    start_state = compile(parsed)
-
-    for step in dfa_run(start_state, string):
-        state = step.state
-
-        if state.isempty:
-            return {}
-
-        group_info.step(step.index, step.goto.events)
-
-    groups = group_info.finalize(0, step.index)
-
-    groups.pop(0, None)
-
-    return groups
-
-

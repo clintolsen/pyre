@@ -36,8 +36,6 @@ class Regex:
 
             self._nullable = None
             self.events = ()
-            self.goto = []
-            self.state_number = None
 
             self.isempty = False
             self.isepsilon = False
@@ -68,7 +66,7 @@ class Regex:
     def __eq__(self, other):
         return self is other
 
-    def null_markers(self):
+    def prefix_markers(self):
         return set()
 
     # Allow for use in boolean contexts. If we're not empty, then we are True.
@@ -340,16 +338,22 @@ class RegexOr(Regex):
 
         return self._nullable
 
-    def null_markers(self):
-        out = set()
-        if self.left.nullable().isepsilon:
-            out |= self.left.null_markers()
-        if self.right.nullable().isepsilon:
-            out |= self.right.null_markers()
-        return out
+    def prefix_markers(self):
+        return self.left.prefix_markers() | self.right.prefix_markers()
 
     def derive(self, ch, states, negate_states=False):
-        return RegexOr(self.left.derive(ch, states, negate_states), self.right.derive(ch, states, negate_states))
+        lstates = set()
+        rstates = set()
+    
+        left  = self.left.derive(ch, lstates, negate_states)
+        right = self.right.derive(ch, rstates, negate_states)
+    
+        if not left.isempty:
+            states |= lstates
+        if not right.isempty:
+            states |= rstates
+    
+        return RegexOr(left, right)
 
     def __str__(self):
         return '%s | %s' % (self.paren(self.left), self.paren(self.right))
@@ -397,14 +401,8 @@ class RegexXor(Regex):
 
         return self._nullable
 
-    def null_markers(self):
-        l = self.left.isnullable()
-        r = self.right.isnullable()
-        if l and not r:
-            return self.left.null_markers()
-        if r and not l:
-            return self.right.null_markers()
-        return set()
+    def prefix_markers(self):
+        return self.left.prefix_markers() | self.right.prefix_markers()
 
     def derive(self, ch, states, negate_states=False):
         return RegexXor(self.left.derive(ch, states, negate_states), self.right.derive(ch, states, negate_states))
@@ -465,10 +463,8 @@ class RegexAnd(Regex):
 
         return self._nullable
 
-    def null_markers(self):
-        if not (self.left.isnullable() and self.right.isnullable()):
-            return set()
-        return self.left.null_markers() | self.right.null_markers()
+    def prefix_markers(self):
+        return self.left.prefix_markers() | self.right.prefix_markers()
 
     def derive(self, ch, states, negate_states=False):
         return RegexAnd(self.left.derive(ch, states, negate_states), self.right.derive(ch, states, negate_states))
@@ -511,8 +507,8 @@ class RegexStar(Regex):
     def nullable(self):
         return RegexEpsilon()
 
-    def null_markers(self):
-        return self.expr.null_markers()
+    def prefix_markers(self):
+        return self.expr.prefix_markers()
 
     def derive(self, ch, states, negate_states=False):
         return RegexConcat(self.expr.derive(ch, states, negate_states), self)
@@ -548,8 +544,8 @@ class RegexPlus(Regex):
     def nullable(self):
         return self.expr.nullable()
 
-    def null_markers(self):
-        return self.expr.null_markers()
+    def prefix_markers(self):
+        return self.expr.prefix_markers()
 
     def derive(self, ch, states, negate_states=False):
         return RegexConcat(self.expr.derive(ch, states, negate_states), RegexStar(self.expr))
@@ -579,8 +575,8 @@ class RegexOpt(Regex):
     def nullable(self):
         return RegexEpsilon()
 
-    def null_markers(self):
-        return self.expr.null_markers()
+    def prefix_markers(self):
+        return self.expr.prefix_markers()
 
     def derive(self, ch, states, negate_states=False):
         return self.expr.derive(ch, states, negate_states)
@@ -693,19 +689,19 @@ class RegexConcat(Regex):
             #
             if not right.isempty:
                 states |= rstates
-                states |= self.left.null_markers()
+                states |= self.left.prefix_markers()
 
         result = RegexOr(left, right)
 
         return result
 
-    def null_markers(self):
-        if not self.left.isnullable():
-            return set()
-        if not self.right.isnullable():
-            return set()
+    def prefix_markers(self):
+        out = set(self.left.prefix_markers())
 
-        return self.left.null_markers() | self.right.null_markers()
+        if self.left.isnullable():
+            out |= self.right.prefix_markers()
+
+        return out
 
     def __str__(self):
         return '%s·%s' % (self.paren(self.left), self.paren(self.right))
@@ -762,10 +758,8 @@ class RegexDiff(Regex):
 
         return self._nullable
 
-    def null_markers(self):
-        if self.left.isnullable() and not self.right.isnullable():
-            return self.left.null_markers()
-        return set()
+    def prefix_markers(self):
+        return self.left.prefix_markers()
 
     def derive(self, ch, states, negate_states=False):
         return RegexDiff(self.left.derive(ch, states, negate_states), self.right.derive(ch, states, not negate_states))
@@ -857,8 +851,8 @@ class RegexExpr(Regex):
     def derive(self, ch, states, negate_states=False):
         return RegexExpr(self.expr.derive(ch, states, negate_states))
 
-    def null_markers(self):
-        return self.expr.null_markers()
+    def prefix_markers(self):
+        return self.expr.prefix_markers()
 
     def __str__(self):
         return '( %s )' % self.expr
@@ -887,7 +881,7 @@ class RegexMarker(Regex):
         # Markers don't match characters
         return RegexEmpty()
 
-    def null_markers(self):
+    def prefix_markers(self):
         return {self}
 
     def __str__(self):
