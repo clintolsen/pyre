@@ -7,6 +7,8 @@ LOG = logging.getLogger(__file__)
 
 from . import util
 from . import regex
+from . parser import Parser
+from . import regex
 
 # Manage state transition information. In addition to keeping track of the next
 # state, we will also house info about which particular states were used to
@@ -199,7 +201,7 @@ def dfa_run(start_state, text, start_index=0):
 
 
 def match(expr, string, *, greedy=True):
-    start_state = compile(expr)
+    start_state = expr
     end_index = _span_from(start_state, string, 0, greedy=greedy)
     if end_index is None:
         return {}
@@ -217,7 +219,7 @@ def fullmatch(expr, string):
             {group_id: [(start, end), ...]}
         where start/end are 0-based indices into `string`, end-exclusive.
     """
-    start_state = compile(expr)
+    start_state = expr
     group_info = GroupInfo()
     state = start_state
 
@@ -308,7 +310,7 @@ def search(expr, string, *, greedy=True, all=False):
         - otherwise returns {group_id: [(start, end), ...]} where each
           (start, end) is one non-overlapping match for that group.
     """
-    start_state = compile(expr)
+    start_state = expr
     n = len(string)
 
     if not all:
@@ -348,3 +350,32 @@ def search(expr, string, *, greedy=True, all=False):
         offset = _skip(start_state, string, end_index)
 
     return all_groups
+
+def search2(expr, string, *, greedy=True, all=False):
+    """
+    Search for `expr` in `string`.
+    """
+    parser = Parser()
+    parsed = parser.parse(f'.* ({expr})')
+    group_info = GroupInfo()
+
+    if parser.errors:
+        raise ValueError(f"Invalid regex: {expr}")
+
+    start_state = compile(parsed)
+
+    for step in dfa_run(start_state, string):
+        state = step.state
+
+        if state.isempty:
+            return {}
+
+        group_info.step(step.index, step.goto.events)
+
+    groups = group_info.finalize(0, step.index)
+
+    groups.pop(0, None)
+
+    return groups
+
+
