@@ -117,23 +117,23 @@ class Regex:
 
         return '%s' % child
 
-    def tree(self, prefix=''):
+    def tree(self, prefix='', is_last=True):
         ''' Output a representation of an RE as an ASCII tree '''
         out = ''
         if prefix:
-            if prefix[-4] == '|':
-                out += prefix[:-4] + '+---'
+            if is_last:
+                out += prefix[:-4] + '└── '
             else:
-                out += prefix[:-4] + '`---'
+                out += prefix[:-4] + '├── '
         out += repr(self) + '\n'
-        if hasattr(self, 'right'):
-            out += prefix + '|    \n'
-            out += self.right.tree(prefix=prefix + '|   ')
-        if hasattr(self, 'left'):
-            out += prefix + '|    \n'
-            out += self.left.tree(prefix=prefix + '    ')
+        if hasattr(self, 'right') and hasattr(self, 'left'):
+            out += prefix + '│    \n'
+            out += self.right.tree(prefix=prefix + '│   ', is_last=False)
+            out += prefix + '│    \n'
+            out += self.left.tree(prefix=prefix + '    ', is_last=True)
         if hasattr(self, 'expr'):
-            out += self.expr.tree(prefix=prefix + '    ')
+            out += prefix + '│    \n'
+            out += self.expr.tree(prefix=prefix + '    ', is_last=True)
 
         return out
 
@@ -194,7 +194,7 @@ class RegexEmpty(Regex):
         return self
 
     def __str__(self):
-        return self.sym
+        return RegexEmpty.sym
 
 
 class RegexEpsilon(Regex):
@@ -223,7 +223,7 @@ class RegexEpsilon(Regex):
         return RegexEmpty()
 
     def __str__(self):
-        return 'ε'
+        return RegexEpsilon.sym
 
 class RegexSym(Regex):
     '''
@@ -356,7 +356,7 @@ class RegexOr(Regex):
         return RegexOr(left, right)
 
     def __str__(self):
-        return '%s | %s' % (self.paren(self.left), self.paren(self.right))
+        return f'{self.paren(self.left)} {RegexOr.sym} {self.paren(self.right)}'
 
 
 class RegexXor(Regex):
@@ -408,7 +408,7 @@ class RegexXor(Regex):
         return RegexXor(self.left.derive(ch, states, negate_states), self.right.derive(ch, states, negate_states))
 
     def __str__(self):
-        return '%s ^ %s' % (self.paren(self.left), self.paren(self.right))
+        return f'{self.paren(self.left)} {RegexXor.sym} {self.paren(self.right)}'
 
 
 class RegexAnd(Regex):
@@ -470,7 +470,7 @@ class RegexAnd(Regex):
         return RegexAnd(self.left.derive(ch, states, negate_states), self.right.derive(ch, states, negate_states))
 
     def __str__(self):
-        return '%s & %s' % (self.paren(self.left), self.paren(self.right))
+        return f'{self.paren(self.left)} {RegexAnd.sym} {self.paren(self.right)}'
 
 
 class RegexStar(Regex):
@@ -514,7 +514,7 @@ class RegexStar(Regex):
         return RegexConcat(self.expr.derive(ch, states, negate_states), self)
 
     def __str__(self):
-        return '%s*' % self.paren(self.expr)
+        return f'{self.paren(self.expr)}{RegexStar.sym}'
 
 
 class RegexPlus(Regex):
@@ -551,7 +551,7 @@ class RegexPlus(Regex):
         return RegexConcat(self.expr.derive(ch, states, negate_states), RegexStar(self.expr))
 
     def __str__(self):
-        return '%s+' % self.paren(self.expr)
+        return f'{self.paren(self.expr)}{RegexPlus.sym}'
 
 
 class RegexOpt(Regex):
@@ -582,7 +582,7 @@ class RegexOpt(Regex):
         return self.expr.derive(ch, states, negate_states)
 
     def __str__(self):
-        return '%s?' % self.paren(self.expr)
+        return f'{self.paren(self.expr)}{RegexOpt.sym}'
 
 
 class RegexDot(Regex):
@@ -609,7 +609,7 @@ class RegexDot(Regex):
         return RegexEpsilon()
 
     def __str__(self):
-        return '.'
+        return RegexDot.sym
 
 
 class RegexConcat(Regex):
@@ -704,7 +704,7 @@ class RegexConcat(Regex):
         return out
 
     def __str__(self):
-        return '%s·%s' % (self.paren(self.left), self.paren(self.right))
+        return f'{self.paren(self.left)}{RegexConcat.sym}{self.paren(self.right)}'
 
 
 class RegexDiff(Regex):
@@ -765,7 +765,7 @@ class RegexDiff(Regex):
         return RegexDiff(self.left.derive(ch, states, negate_states), self.right.derive(ch, states, not negate_states))
 
     def __str__(self):
-        return '%s - %s' % (self.paren(self.left), self.paren(self.right))
+        return f'{self.paren(self.left)} {RegexDiff.sym} {self.paren(self.right)}'
 
 
 class RegexNot(Regex):
@@ -808,7 +808,7 @@ class RegexNot(Regex):
         return RegexNot(self.expr.derive(ch, states, not negate_states))
 
     def __str__(self):
-        return '~%s' % self.paren(self.expr)
+        return f'{RegexNot.sym}{self.paren(self.expr)}'
 
 
 class RegexExpr(Regex):
@@ -855,7 +855,7 @@ class RegexExpr(Regex):
         return self.expr.prefix_markers()
 
     def __str__(self):
-        return '( %s )' % self.expr
+        return f'({self.expr})'
 
 
 class RegexMarker(Regex):

@@ -47,7 +47,7 @@ def compile(expr):
     default_goto = Goto(null_state, set())
 
     initial_state = expr
-    LOG.debug(f'Initial state: {initial_state.tree()}')
+    LOG.debug(f'{initial_state.tree()}')
     dfa_states = set()
     todo_list = {initial_state}
     from collections import OrderedDict
