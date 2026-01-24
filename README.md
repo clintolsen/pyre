@@ -1,4 +1,7 @@
-# pyre — A Regular Expression Engine Based on Derivatives
+<h1>
+   <img src="images/pyre.png" alt="pyre logo" width="100" style="vertical-align: middle;">
+   pyre — A Regular Expression Engine Based on Derivatives
+</h1>
 
 **pyre** is a Python implementation of a regular-expression engine built using
 **Brzozowski derivatives**. Unlike traditional engines that first translate the
