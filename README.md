@@ -1,5 +1,5 @@
 <h1>
-   <img src="images/pyre.png" alt="pyre logo" width="100" style="vertical-align: middle;">
+   <img src="images/pyre.png" alt="pyre logo" width="80" style="vertical-align: middle;">
    pyre — A Regular Expression Engine Based on Derivatives
 </h1>
 
