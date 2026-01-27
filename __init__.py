@@ -15,7 +15,7 @@ def compile(pattern):
         parser = Parser()
         expr = parser.parse(pattern)
         if parser.errors:
-            raise ValueError(f"Invalid regex pattern: {pattern}")
+            raise ValueError(f'Invalid regex pattern: {repr(pattern)}')
         return _compile_dfa(expr)
     elif isinstance(pattern, _regex.Regex):
         # Don't recompile

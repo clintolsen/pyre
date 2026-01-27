@@ -47,7 +47,12 @@ def main(argv=None):
         with open(target) as f:
             file = f.read()
 
-        groups = search(args.regex, file, all=args.all, greedy=args.greedy)
+        try:
+            groups = search(args.regex, file, all=args.all, greedy=args.greedy)
+        except ValueError as e:
+            LOG.error(e)
+            return 1
+
         LOG.debug(f'Groups: {groups}')
         flatten = [interval for group in groups.values() for interval in group]
         intervals = regex.merge_intervals(flatten)
@@ -70,5 +75,10 @@ def main(argv=None):
                 print()
                 break
     else:
-        groups = fullmatch(args.regex, args.target)
+        try:
+            groups = fullmatch(args.regex, args.target)
+        except ValueError as e:
+            LOG.error(e)
+            return 1
+
         print(groups)

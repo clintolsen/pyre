@@ -27,6 +27,7 @@ class Parser:
         self.parser = yacc.yacc(module=self, **kwargs)
         self.lexer.groups = [0]
         self.lexer.events = []
+        self.lexer.line_start = 0
         self.lexer.group_count = 1
         self.errors = 0
 
@@ -63,16 +64,24 @@ class Parser:
         'ID'
     )
 
-    t_ignore = ' \t'
+    t_ignore = ' \t\r\v\f'
+
+    def column(self, t):
+        return t.lexpos - t.lexer.line_start
 
     def t_error(self, t):
-        LOG.error("Illegal character '%s' at %d", t.value[0], t.lexpos)
+        LOG.error(f'{t.lineno}:{self.column(t)}: Invalid character {repr(t.value[0])}')
         t.lexer.skip(1)
 
     states = (
         ('repeat', 'exclusive'),
         ('class', 'exclusive')
     )
+
+    def t_newline(self, t):
+        r'\n+'
+        t.lexer.lineno += len(t.value)
+        t.lexer.line_start = t.lexpos
 
     def t_EPSILON(self, t):
         r'ε'
@@ -498,6 +507,6 @@ class Parser:
         self.errors += 1
 
         if (p):
-            LOG.error('%d:%d: Syntax error at \'%s\'' % (p.lineno, p.lexpos + 1, p.value))
+            LOG.error(f'{p.lineno}:{self.column(p)}: Syntax error at "{p.value.value}"')
         else:
             LOG.error('Syntax error at end of input')
