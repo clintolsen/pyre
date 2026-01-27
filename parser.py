@@ -78,6 +78,10 @@ class Parser:
         ('class', 'exclusive')
     )
 
+    def t_comment(self, t):
+        r'\#[^\n]*'
+        pass
+
     def t_newline(self, t):
         r'\n+'
         t.lexer.lineno += len(t.value)
