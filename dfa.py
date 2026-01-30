@@ -126,6 +126,7 @@ class GroupInfo:
     def __init__(self):
         self.active = {}   # g -> start_index
         self.final  = {}   # g -> [(start, end), ...]
+        self.names  = {}   # g -> name (str)
 
     def step(self, index: int, events: set[Event]):
         """
@@ -156,6 +157,11 @@ class GroupInfo:
                 pass
 
         for e in opens:
+            # Named groups
+            #
+            if e.name:
+                self.names[e.gid] = e.name
+
             gid = e.gid
             # If you can get nested or repeated OPEN without CLOSE, decide policy.
             # For now: overwrite start (or ignore if already open).
@@ -170,12 +176,24 @@ class GroupInfo:
 
         # Close any still-active groups at end of match
         #
-        for gid, start in list(self.active.items()):
+        for gid, start in self.active.items():
             out.setdefault(gid, []).append((start, match_end))
 
         # Whole match
         #
         out.setdefault(0, []).append((match_start, match_end))
+
+        # Add named groups
+        #
+        named = {
+            name: out[gid]
+            for gid, name in self.names.items()
+            if gid in out
+        }
+
+        # Shouldn't collide
+        #
+        out = {**named, **out}
 
         return out
 

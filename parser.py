@@ -41,6 +41,7 @@ class Parser:
         'QMARK',
         'DOT',
         'LPAREN',
+        'LPAREN_NAMED',
         'RPAREN',
         'LSQUARE',
         'RSQUARE',
@@ -165,6 +166,26 @@ class Parser:
     def t_PLUS(self, t):
         r'\+'
         t.value = TokenValue(t)
+        return t
+
+    def t_LPAREN_NAMED(self, t):
+        r'''(?x:              # re.X
+        \( \s*                # '('
+          \? \s*              # '?'
+          P? \s*              # Optional 'P'
+          < \s*               # '<'
+            (?P<name>
+              [a-zA-Z_]       # ID
+              [a-zA-Z0-9_]*   # ...
+            ) \s*             
+          > \s*               # '>'
+        )
+        '''
+        self.lexer.events.append(event.Event(event.OPEN, self.lexer.group_count,
+            t.lexer.lexmatch.group('name')))
+        t.value = TokenValue(t)
+        self.lexer.groups.append(self.lexer.group_count)
+        self.lexer.group_count += 1
         return t
 
     def t_LPAREN(self, t):
@@ -402,6 +423,14 @@ class Parser:
 
     def p_primary_expr(self, p):
         'primary : LPAREN expression RPAREN'
+
+        expr = regex.RegexExpr(p[2])
+        concat = regex.RegexConcat(regex.RegexMarker(**p[1].kwds), expr)
+
+        p[0] = regex.RegexConcat(concat, regex.RegexMarker(**p[3].kwds))
+
+    def p_primary_named_expr(self, p):
+        'primary : LPAREN_NAMED expression RPAREN'
 
         expr = regex.RegexExpr(p[2])
         concat = regex.RegexConcat(regex.RegexMarker(**p[1].kwds), expr)
