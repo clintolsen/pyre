@@ -42,6 +42,7 @@ class Parser:
         'DOT',
         'LPAREN',
         'LPAREN_NAMED',
+        'LPAREN_NOCAPTURE',
         'RPAREN',
         'LSQUARE',
         'RSQUARE',
@@ -188,6 +189,12 @@ class Parser:
         self.lexer.group_count += 1
         return t
 
+    def t_LPAREN_NOCAPTURE(self, t):
+        r'\(\s*\?\s*:'
+        t.value = TokenValue(t)
+        self.lexer.groups.append(-1)
+        return t
+
     def t_LPAREN(self, t):
         r'\('
         self.lexer.events.append(event.Event(event.OPEN, self.lexer.group_count))
@@ -198,9 +205,10 @@ class Parser:
 
     def t_RPAREN(self, t):
         r'\)'
-        self.lexer.events.append(event.Event(event.CLOSE, self.lexer.groups[-1]))
+        group = self.lexer.groups.pop()
+        if group != -1:
+            self.lexer.events.append(event.Event(event.CLOSE, group))
         t.value = TokenValue(t)
-        self.lexer.groups.pop()
         return t
 
     def t_LCURLY(self, t):
@@ -245,24 +253,40 @@ class Parser:
 
     def t_class_MINUS(self, t):
         r'-'
-        t.type = 'MINUS'
+    
+        # Position in scanned class so far
+        pos = len(self.ID_scan)
+    
+        # If '-' is first character (or after '^'), it's literal
+        if pos == 0 or (pos == 1 and self.ID_scan[0] == '^'):
+            t.type = 'ID'
+        else:
+            # Peek next character to see if we're right before ']'
+            nxt = t.lexer.lexdata[t.lexer.lexpos:t.lexer.lexpos+1]
+    
+            if nxt == ']':
+                # '-' at end of class is literal
+                t.type = 'ID'
+            else:
+                # Otherwise it's a range operator
+                t.type = 'MINUS'
+    
+        self.ID_scan.append(t.value)
         t.value = TokenValue(t)
         return t
 
     def t_class_ID(self, t):
         r'.'
+    
         self.ID_scan.append(t.value)
     
         if t.value == '^' and len(self.ID_scan) == 1:
             t.type = 'CARET'
     
         if t.value == ']':
-            # Check if ']' is literal (first char, or after '^' as first char)
             if self.ID_scan == [']'] or self.ID_scan == ['^', ']']:
-                # ']' is literal, keep as ID
                 pass
             else:
-                # ']' closes the character class
                 t.lexer.begin('INITIAL')
                 t.type = 'RSQUARE'
     
@@ -436,6 +460,10 @@ class Parser:
         concat = regex.RegexConcat(regex.RegexMarker(**p[1].kwds), expr)
 
         p[0] = regex.RegexConcat(concat, regex.RegexMarker(**p[3].kwds))
+
+    def p_primary_no_capture_expr(self, p):
+        'primary : LPAREN_NOCAPTURE expression RPAREN'
+        p[0] = regex.RegexExpr(p[2], **p[1].kwds)
 
     def p_primary_class(self, p):
         'primary : LSQUARE opt_caret ranges RSQUARE'
