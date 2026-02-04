@@ -4,7 +4,7 @@
 </h1>
 
 <div align="center" style="padding: 10px;">
-  <img src="images/Regular expressions.png" width="30%">
+  <img src="images/Regular Expressions.png" width="30%">
 </div>
 
 **pyre** is a Python implementation of a regular-expression engine built using
