@@ -3,6 +3,10 @@
    pyre — A Regular Expression Engine Based on Derivatives
 </h1>
 
+<div align="center" style="padding: 10px;">
+  <img src="images/Regular expressions.png" width="30%">
+</div>
+
 **pyre** is a Python implementation of a regular-expression engine built using
 **Brzozowski derivatives**. Unlike traditional engines that first translate the
 expression into an NFA and then to a DFA, a derivative-based engine constructs
@@ -14,7 +18,7 @@ backtracking.
 
 The project includes:
 
-- A lexer and parser (PLY-based)
+- A lexer and parser written in PLY
 - A full AST of regular-expression operators
 - DFA construction using derivatives
 - Capture-group support
