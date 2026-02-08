@@ -11,9 +11,9 @@
 **Brzozowski derivatives**. Unlike traditional engines that first translate the
 expression into an NFA and then to a DFA, a derivative-based engine constructs
 the DFA directly from the expression by repeatedly applying derivative rules.
-This also allows novel set operations like language complement `(~RE)` and
-intersection `(RE & RE)` in an efficient manner. Because matching is performed
-on the resulting DFA, recognition runs in linear time and does not require
+This also allows novel set operations like language complement `~RE` and
+intersection `RE & RE` in an efficient manner. Because matching is performed
+on the resulting DFA, the recognizer runs in linear time and does not require
 backtracking.
 
 The project includes:
