@@ -170,17 +170,17 @@ class Parser:
         return t
 
     def t_LPAREN_NAMED(self, t):
-        r'''(?x:              # re.X
-        \( \s*                # '('
-          \? \s*              # '?'
-          P? \s*              # Optional 'P'
-          < \s*               # '<'
-            (?P<name>
-              [a-zA-Z_]       # ID
-              [a-zA-Z0-9_]*   # ...
-            ) \s*             
-          > \s*               # '>'
-        )
+        r'''(?x:                    # re.X
+              \( \s*                # '('
+                \? \s*              # '?'
+                P? \s*              # Optional 'P'
+                < \s*               # '<'
+                  (?P<name>
+                    [a-zA-Z_]       # ID
+                    [a-zA-Z0-9_]*   # ...
+                  ) \s*             
+                > \s*               # '>'
+              )
         '''
         self.lexer.events.append(event.Event(event.OPEN, self.lexer.group_count,
             t.lexer.lexmatch.group('name')))
@@ -228,7 +228,9 @@ class Parser:
         t.value = int(t.value)
         return t
 
-    def t_repeat_COMMA(self, t): r'\,'; return t
+    def t_repeat_COMMA(self, t):
+        r'\,'
+        return t
 
     def t_repeat_RCURLY(self, t):
         r'\}'
@@ -384,7 +386,6 @@ class Parser:
         
             # {m,n} with finite bounds
             else:
-                # assume lo <= hi; if not, you may want to log an error
                 p[0] = None
                 for k in range(lo, hi + 1):
                     if k == 0:
@@ -517,6 +518,7 @@ class Parser:
         else:
             LOG.error('Error: Range %s-%s in non-increasing order', p[1].value,
                 p[3].value)
+            self.errors += 1
 
     def p_literal_dot(self, p):
         'literal : DOT'
@@ -562,6 +564,9 @@ class Parser:
 
     def p_rspec_minmax(self, p):
         'rspec : INTEGER COMMA INTEGER'
+        if p[1] > p[3]:
+            LOG.error('Error: Range %s-%s in non-increasing order', p[1], p[3])
+            self.errors += 1
         p[0] = (p[1], p[3])
 
     def p_error(self, p):
