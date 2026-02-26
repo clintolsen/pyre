@@ -7,17 +7,20 @@ LOG = logging.getLogger(__file__)
 
 from . import util
 from . import regex
-from . parser import Parser
-from . import regex
+from . import event
+from .event import Event
+
+from collections import namedtuple
+DFAStep = namedtuple("DFAStep", "index char prev_state state goto")
 
 # Manage state transition information. In addition to keeping track of the next
 # state, we will also house info about which particular states were used to
 # compute the transition, generally a RegexDot or RegexSym.
 #
 class Goto:
-    def __init__(self, _next, _states):
+    def __init__(self, _next, _states=None):
         self._next = _next
-        self._states = _states
+        self._states = _states if _states is not None else set()
         self._events = None
 
     @property
@@ -35,93 +38,303 @@ class Goto:
         return self._events
 
     def __str__(self):
-        return f'Goto(next={self._next.state_number} events={self.events})'
+        return f'Goto(next={self._next.name} events={self.events})'
 
     def __repr__(self):
         return f'{self}'
 
 
-def compile(expr):
-    ''' Construct a DFA from a regular expression '''
-    null_state = regex.RegexEmpty()
-    default_goto = Goto(null_state, set())
+class DFA:
+    def __init__(self, expr):
+        self.states = set()
+        self.initial = DFAState(expr)
 
-    initial_state = expr
-    LOG.debug(f'{initial_state.tree()}')
-    dfa_states = set()
-    todo_list = {initial_state}
-    from collections import OrderedDict
-    states = OrderedDict()
+        todo = {self.initial}
 
-    while todo_list:
-        current_state = todo_list.pop()
+        while todo:
+            current = todo.pop()
+            self.states.add(current)
+            current.name = f'q{len(self.states)}'
 
-        classes = current_state.charset.get_int_sets()
-        current_state.state_number = 'q%d' % len(dfa_states)
-        LOG.debug(f'Current state {current_state.state_number}: {current_state}')
+            LOG.debug(f'Current state {current.name}: {current}')
 
-        markers = current_state.prefix_markers()
-        ev = set()
-        for m in markers:
-            ev |= set(m.events)
-        current_state.prefix_events = ev
+            markers = current.regex.prefix_markers()
+            events = set()
+            for marker in markers:
+                events |= set(marker.events)
 
-        dfa_states.add(current_state)
-        states[current_state] = current_state
-        current_state.goto = [default_goto] * 256
-        for charset in classes:
-            if charset:
-                char = chr(charset[0][0])
+            current.prefix_events = events
 
-                accept = set()
-                next_state = current_state.derive(char, accept)
-
-                LOG.debug(f'Derivative of {current_state.state_number} of {repr(char)} => {next_state}')
-                LOG.debug(f'Transition for {[regex.CharSet._fmt_char(x) for x in charset[0]]} is {accept}')
-
-                goto = Goto(next_state, accept)
-                LOG.debug(f'Goto events: {goto.events}')
-
-                for rng in charset:
-                    for code in range(rng[0], rng[-1] + 1):
-                        current_state.goto[code] = goto
-
-                if next_state not in dfa_states:
-                    todo_list.add(next_state)
-
-
-    if LOG.getEffectiveLevel() == logging.DEBUG:
-        for state in states.values():
-            state_label = state.state_number
-
-            if state.isnullable():
-                state_label = util.highlight(state_label)
-
-            print(f'{state_label}: {state} (markers={state.prefix_markers()})')
-
-            classes = state.charset.get_int_sets()
+            classes = current.regex.charset.get_int_sets()
 
             for charset in classes:
                 if charset:
-                   goto = state.goto[charset[0][0]]
-                   inside = regex.CharSet.fmt_ranges(charset)
-                   print(f"    [{inside}] {goto}")
+                    char = chr(charset[0][0])
 
-    LOG.debug('Total DFA states: %d' % len(dfa_states))
-    LOG.debug('Total RE instances: %d' % len(regex.Regex._instance))
+                    accept = set()
+                    _next = DFAState(current.regex.derive(char, accept))
 
-    return initial_state
+                    LOG.debug(f'Derivative of {current.name} of {repr(char)} => {_next}')
+                    LOG.debug(f'Transition for {[regex.CharSet._fmt_char(x) for x in charset[0]]} is {accept}')
 
-from . import event
-from .event import Event
+                    goto = Goto(_next, accept)
+
+                    LOG.debug(f'Goto events: {goto.events}')
+
+                    for rng in charset:
+                        for code in range(rng[0], rng[-1] + 1):
+                            current.goto[code] = goto
+
+                    if _next not in self.states:
+                        todo.add(_next)
+
+        self.states.add(DFAState.empty())
+        DFAState.empty().name = f'q{len(self.states)}'
+
+        if LOG.getEffectiveLevel() == logging.DEBUG:
+            for state in sorted(self.states, key=lambda x: x.name):
+                label = state.name
+    
+                if state.regex.isnullable():
+                    label = util.highlight(label)
+    
+                print(f'{label}: {state} (events={state.prefix_events})')
+    
+                classes = state.regex.charset.get_int_sets()
+    
+                for charset in classes:
+                    if charset:
+                       goto = state.goto[charset[0][0]]
+                       inside = regex.CharSet.fmt_ranges(charset)
+                       print(f"    [{inside}] {goto}")
+    
+        LOG.debug('Total DFA states: %d' % len(self.states))
+        LOG.debug('Total RE instances: %d' % len(regex.Regex._instance))
+
+
+    def run(self, text, index=0):
+        """
+        Iterate over `text[index:]`.
+    
+        Yields DFAStep(index, char, prev_state, state, goto)
+        where:
+          - prev_state: state before reading char
+          - state:      state after reading char
+          - goto:       the Goto object used
+        """
+        state = self.initial
+        for i in range(index, len(text)):
+            ch = text[i]
+            goto = state.goto[ord(ch)]
+            _next = goto._next
+
+            yield DFAStep(
+                index=i,
+                char=ch,
+                prev_state=state,
+                state=_next,
+                goto=goto,
+            )
+            state = _next
+    
+
+    def fullmatch(self, text):
+        """
+        Full-string match against `text`.
+    
+        Returns:
+            {} if no match
+    
+            Otherwise:
+                {group_id: [(start, end), ...]}
+            where start/end are 0-based indices into `text`, end-exclusive.
+        """
+        group_info = GroupInfo()
+    
+        LOG.debug(f'Match: {self.initial} against {text}')
+    
+        state = self.initial
+    
+        for step in self.run(text):
+            state = step.state
+            LOG.debug(f'Match: Step {step}')
+    
+            # Dead state
+            #
+            if state.regex.isempty:
+                return {}
+    
+            # Track capture groups
+            group_info.step(step.index, step.goto.events)
+    
+        if not state.regex.isnullable():
+            return {}
+    
+        end_index = len(text)
+    
+        # Finalize match span [0, end_index) and guarantee group 0 exists
+        #
+        finalized = group_info.finalize(0, end_index)
+    
+        return finalized
+
+    def match(self, text, *, greedy=True):
+        end_index = self._span_from(text, 0, greedy=greedy)
+        if end_index is None:
+            return {}
+        return self._match_to_end(text, 0, end_index)
+
+
+    # Skip over known bad start characters
+    #
+    def _skip(self, s, offset):
+        n = len(s)
+        while offset < n and self.initial.goto[ord(s[offset])]._next.regex.isempty:
+            offset += 1
+        return offset
+
+    def search(self, text, *, greedy=True, all=False):
+        """
+        Search in `text`.
+    
+        Greedy: Find the longest match.
+    
+        If all is False (default):
+            - returns {} if no match
+            - otherwise returns {group_id: [(start, end)]} for the first match
+    
+        If all is True:
+            - returns {} if no match
+            - otherwise returns {group_id: [(start, end), ...]} where each
+              (start, end) is one non-overlapping match for that group.
+        """
+        n = len(text)
+    
+        if not all:
+            offset = self._skip(text, 0)
+            while offset < n:
+                end_index = self._span_from(text, offset, greedy=greedy)
+    
+                if end_index is not None:
+                    return self._match_to_end(text, offset, end_index)
+    
+                offset = self._skip(text, offset + 1)
+    
+            return {}
+
+        all_groups = {}
+        offset = self._skip(text, 0)
+    
+        while offset < n:
+            end_index = self._span_from(text, offset, greedy=greedy)
+    
+            if end_index is None:
+                offset = self._skip(text, offset + 1)
+                continue
+    
+            groups = self._match_to_end(text, offset, end_index)
+    
+            for gid, intervals in groups.items():
+                all_groups.setdefault(gid, []).extend(intervals)
+    
+            offset = self._skip(text, end_index)
+    
+        return all_groups
+
+    def _span_from(self, text, offset, *, greedy=True):
+        """
+        Return the best end index (exclusive) of a match starting at offset,
+        or None if no match.
+        """
+        latest_end = None
+    
+        for step in self.run(text, index=offset):
+            state = step.state
+    
+            if state.regex.isempty:
+                return latest_end
+    
+            if state.regex.isnullable():
+                latest_end = step.index + 1
+                if not greedy:
+                    return latest_end
+    
+        return latest_end
+    
+
+    def _match_to_end(self, text, offset, end_index):
+        """
+        Run DFA from offset up to end_index and compute capture groups.
+        """
+        group_info = GroupInfo()
+        last_state = self.initial
+    
+        for step in self.run(text, index=offset):
+            if step.index >= end_index:
+                break
+    
+            state = step.state
+            if state.regex.isempty:
+                break
+    
+            group_info.step(step.index, step.goto.events)
+            last_state = state
+    
+        # apply boundary CLOSE events at the match endpoint
+        close_events = {e for e in last_state.prefix_events if e.kind == event.CLOSE}
+        if close_events:
+            group_info.step(end_index, close_events)
+    
+        return group_info.finalize(offset, end_index)
+
+
+class DFAState:
+    _empty = None
+    _instances = {}
+
+    def __new__(cls, expr):
+        if expr in cls._instances:
+            return cls._instances[expr]
+
+        self = object.__new__(cls)
+        cls._instances[expr] = self
+
+        self.regex = expr
+        self.name = None
+        self.prefix_events = None
+        self.goto = [Goto(DFAState.empty(), None)] * 256
+
+        return self
+
+    @classmethod
+    def empty(cls):
+        if cls._empty is None:
+            cls._empty = object.__new__(cls)
+            cls._empty.regex = regex.RegexEmpty()
+            cls._empty.name = None
+            cls._empty.prefix_events = None
+            cls._empty.goto = [Goto(cls._empty)] * 256
+            cls._instances[cls._empty.regex] = cls._empty
+
+        return cls._empty
+
+    __hash__ = object.__hash__
+
+    def __eq__(self, other):
+        return self is other
+
+    def __repr__(self):
+        return f'DFAState(name={self.name} regex={self.regex})'
+
+def compile(expr):
+    ''' Construct a DFA from a regular expression '''
+     
+    dfa = DFA(expr)
+    return dfa
 
 class GroupInfo:
     """
     Tracks capture groups based on the set of active groups from each DFA step.
-
-    Mirrors the logic originally in `search()`:
-      - safe copies of active keys before computing diffs
-      - supports multiple groups
     """
     def __init__(self):
         self.active = {}   # g -> start_index
@@ -134,15 +347,12 @@ class GroupInfo:
         events = set of Event(...) from the transition (goto.events)
         """
         if not events:
-            return set(), set()
+            return 
 
         # Handle close events first 
         # 
         closes = [e for e in events if e.kind == event.CLOSE]
         opens  = [e for e in events if e.kind == event.OPEN]
-
-        ended = set()
-        started = set()
 
         for e in closes:
             gid = e.gid
@@ -150,11 +360,6 @@ class GroupInfo:
                 start = self.active[gid]
                 self.final.setdefault(gid, []).append((start, index))
                 del self.active[gid]
-                ended.add(gid)
-            else:
-                # Optional: debug/log unexpected CLOSE
-                # LOG.debug(f"Unmatched CLOSE({gid}) at index={index}")
-                pass
 
         for e in opens:
             # Named groups
@@ -167,9 +372,7 @@ class GroupInfo:
             # For now: overwrite start (or ignore if already open).
             #
             self.active[gid] = index
-            started.add(gid)
 
-        return started, ended
 
     def finalize(self, match_start: int, match_end: int):
         out = {g: list(v) for g, v in self.final.items()}
@@ -196,189 +399,3 @@ class GroupInfo:
         out = {**named, **out}
 
         return out
-
-from collections import namedtuple
-
-DFAState = namedtuple("DFAState", "index char prev_state state goto")
-
-def dfa_run(start_state, text, start_index=0):
-    """
-    Iterate a DFA over `text[start_index:]`.
-
-    Yields DFAStep(index, char, prev_state, state, goto)
-    where:
-      - prev_state: state before reading char
-      - state:      state after reading char
-      - goto:       the Goto object used
-    """
-    state = start_state
-    for i in range(start_index, len(text)):
-        ch = text[i]
-        goto = state.goto[ord(ch)]
-        next_state = goto._next
-        yield DFAState(
-            index=i,
-            char=ch,
-            prev_state=state,
-            state=next_state,
-            goto=goto,
-        )
-        state = next_state
-
-
-def match(expr, string, *, greedy=True):
-    start_state = expr
-    end_index = _span_from(start_state, string, 0, greedy=greedy)
-    if end_index is None:
-        return {}
-    return _match_to_end(start_state, string, 0, end_index)
-
-
-def fullmatch(expr, string):
-    """
-    Full-string match of `expr` against `string`.
-
-    Returns:
-        {} if no match
-
-        Otherwise:
-            {group_id: [(start, end), ...]}
-        where start/end are 0-based indices into `string`, end-exclusive.
-    """
-    start_state = expr
-    group_info = GroupInfo()
-    state = start_state
-
-    LOG.debug(f'Match: {state} against {string}')
-
-    for step in dfa_run(start_state, string):
-        state = step.state
-        LOG.debug(f'Match: Step {step}')
-
-        # Dead state
-        #
-        if state.isempty:
-            return {}
-
-        # Track capture groups
-        group_info.step(step.index, step.goto.events)
-
-    if not state.isnullable():
-        return {}
-
-    end_index = len(string)
-
-    # finalize match span [0, end_index) and guarantee group 0 exists
-    #
-    finalized = group_info.finalize(0, end_index)
-
-    return finalized
-
-# Skip over known bad start characters
-#
-def _skip(start_state, s, offset):
-    n = len(s)
-    while offset < n and start_state.goto[ord(s[offset])]._next.isempty:
-      offset += 1
-    return offset
-
-def _span_from(start_state, string, offset, *, greedy=True):
-    """
-    Return the best end index (exclusive) of a match starting at offset,
-    or None if no match.
-    """
-    latest_end = None
-
-    for step in dfa_run(start_state, string, start_index=offset):
-        state = step.state
-
-        if state.isempty:
-            return latest_end
-
-        if state.isnullable():
-            latest_end = step.index + 1
-            if not greedy:
-                return latest_end
-
-    return latest_end
-
-def _match_to_end(start_state, string, offset, end_index):
-    """
-    Run DFA from offset up to end_index and compute capture groups.
-    """
-    group_info = GroupInfo()
-    last_state = start_state
-
-    for step in dfa_run(start_state, string, start_index=offset):
-        if step.index >= end_index:
-            break
-
-        state = step.state
-        if state.isempty:
-            break
-
-        group_info.step(step.index, step.goto.events)
-        last_state = state
-
-    # apply boundary CLOSE events at the match endpoint
-    close_events = {e for e in last_state.prefix_events if e.kind == event.CLOSE}
-    if close_events:
-        group_info.step(end_index, close_events)
-
-    return group_info.finalize(offset, end_index)
-
-def search(expr, string, *, greedy=True, all=False):
-    """
-    Search for `expr` in `string`.
-
-    Greedy: Find the longest match.
-
-    If all is False (default):
-        - returns {} if no match
-        - otherwise returns {group_id: [(start, end)]} for the first match
-
-    If all is True:
-        - returns {} if no match
-        - otherwise returns {group_id: [(start, end), ...]} where each
-          (start, end) is one non-overlapping match for that group.
-    """
-    start_state = expr
-    n = len(string)
-
-    if not all:
-        offset = _skip(start_state, string, 0)
-        while offset < n:
-            end_index = _span_from(
-                start_state, string, offset, greedy=greedy
-            )
-
-            if end_index is not None:
-                return _match_to_end(
-                    start_state, string, offset, end_index
-                )
-
-            offset = _skip(start_state, string, offset + 1)
-
-        return {}
-    all_groups = {}
-    offset = _skip(start_state, string, 0)
-
-    while offset < n:
-        end_index = _span_from(
-            start_state, string, offset, greedy=greedy
-        )
-
-        if end_index is None:
-            offset = _skip(start_state, string, offset + 1)
-            continue
-
-        groups = _match_to_end(
-            start_state, string, offset, end_index
-        )
-
-        for gid, intervals in groups.items():
-            all_groups.setdefault(gid, []).extend(intervals)
-
-        offset = _skip(start_state, string, end_index)
-
-    return all_groups
