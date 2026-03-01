@@ -1,0 +1,215 @@
+#! /usr/bin/env python3
+
+import math
+import sys
+
+from pathlib import Path
+package_dir = Path(__file__).resolve().parents[2]
+
+sys.path.insert(0, package_dir.as_posix())
+import pyre
+
+class Token:
+    def __init__(self, kind, value, lexeme, start, end):
+        self.kind = kind
+        self.value = value
+        self.lexeme = lexeme
+        self.start = start
+        self.end = end
+
+    def __repr__(self):
+        return f"Token({self.kind!r}, {self.value!r}, {self.lexeme!r}, {self.start}, {self.end})"
+
+
+class Lexer:
+    # Rule order is law out here: first match wins when two patterns can hit the same spot.
+    _SPECS = [
+        ('WS',        r"\s+"),
+        ('NUMBER',    r"\d+\.\d*|\.\d+|\d+"),  # 123, 123.45, .45, 123.
+        ('PLUS',      r"\+"),
+        ('MINUS',     r"-"),
+        ('TIMES',     r"\*"),
+        ('DIVIDE',    r"/"),
+        ('POWER',     r"\^"),
+        ('FACTORIAL', r"!"),
+        ('LPAREN',    r"\("),
+        ('RPAREN',    r"\)"),
+        ('OTHER',     r".")
+    ]
+
+    re_spec = "|".join(f"(?P<{kind}>{pat})" for kind, pat in _SPECS)
+    _CALC_DFA = pyre.compile(re_spec)
+
+    def __init__(self, text: str):
+        self.text = text
+        self.tokens = list(self._lex_tokens())
+        self.pos = 0
+
+    def _convert_number(self, s: str):
+        return float(s) if "." in s else int(s)
+
+    def _lex_tokens(self):
+        for kind, token, start, end in self._CALC_DFA.lex(self.text):
+
+            if kind == "WS":
+                continue
+
+            if kind == "NUMBER":
+                value = self._convert_number(token)
+            else:
+                value = token
+
+            yield Token(kind, value, token, start, end)
+
+        eof = len(self.text)
+        yield Token('EOF', '<EOF>', '', eof, eof)
+
+    @property
+    def current(self) -> Token:
+        return self.tokens[self.pos]
+
+    def advance(self):
+        if self.pos < len(self.tokens) - 1:
+            self.pos += 1
+
+class Parser:
+    """
+    Pratt parser implementation.
+    
+    Each token type has:
+    - lbp: precedence level (higher = tighter binding)
+    - nud: null denotation (prefix/primary) - called when token is first seen
+    - led: left denotation (infix/postfix) - called when token follows an expression
+    """
+    
+    def __init__(self, text: str):
+        self.lexer = Lexer(text)
+
+    def lbp(self, kind: str):
+        return {
+            'EOF':        0,
+            'RPAREN':     0,
+            'PLUS':      10,  # left-associative
+            'MINUS':     10,  # left-associative
+            'TIMES':     20,  # left-associative
+            'DIVIDE':    20,  # left-associative
+            'POWER':     30,  # right-associative
+            'FACTORIAL': 40,  # postfix, highest precedence
+            'NUMBER':     0,  # literals
+        }.get(kind, 0)
+
+    # -----------------------
+    # Core Pratt parsing algorithm
+    # -----------------------
+    def parse(self, rbp: int = 0):
+        """
+        Parse an expression using Pratt's algorithm.
+        
+        Args:
+            rbp: Minimum binding power required to continue parsing.
+        
+        Returns:
+            Parsed expression value.
+        """
+        token = self.lexer.current
+        self.lexer.advance()
+        
+        # Get the nud handler for this token (prefix/primary)
+        left = self.nud(token)
+        
+        # Continue parsing while we have operators with sufficient binding power
+        while rbp < self.lbp(self.lexer.current.kind):
+            token = self.lexer.current
+            self.lexer.advance()
+            
+            left = self.led(token, left)
+        
+        return left
+
+    def nud(self, token: Token):
+        if token.kind == 'NUMBER':
+            return token.value
+        elif token.kind == 'LPAREN':
+            value = self.parse(0)  # Parse expression with minimum binding power
+            self._expect("RPAREN")
+            return value
+        elif token.kind == 'PLUS':
+            return +self.parse(self.lbp('PLUS'))
+        elif token.kind == 'MINUS':
+            return -self.parse(self.lbp('MINUS'))
+        else:
+            raise SyntaxError(f'Unknown nud operator {token.kind}')
+
+
+    # -----------------------
+    # led handler (left denotation - infix/postfix)
+    # -----------------------
+    def led(self, token: Token, left):
+        """Handle infix and postfix operators."""
+        kind = token.kind
+        
+        # Postfix operators
+        if kind == 'FACTORIAL':
+            n = left
+            if not (isinstance(n, (int, float)) and int(n) == n and n >= 0):
+                raise SyntaxError("Factorial is defined for non-negative integers only")
+            return math.factorial(int(n))
+        
+        # Right-associative infix operators
+        if kind == 'POWER':
+            right = self.parse(self.lbp(kind) - 1)
+            return left ** right
+        
+        # Left-associative infix operators
+        if kind in {'PLUS', 'MINUS', 'TIMES', 'DIVIDE'}:
+            right = self.parse(self.lbp(kind) + 1)
+            if kind == 'PLUS':
+                return left + right
+            elif kind == 'MINUS':
+                return left - right
+            elif kind == 'TIMES':
+                return left * right
+            elif kind == 'DIVIDE':
+                return left / right
+        
+        raise SyntaxError(f'Unexpected operator {kind}') 
+
+    def _expect(self, kind: str):
+        """Expect a specific token kind and advance."""
+        if self.lexer.current.kind != kind:
+            raise SyntaxError(f'Expected {kind}, got'
+                f' {self.lexer.current.kind} at "{self.lexer.current.value}"')
+        self.lexer.advance()
+
+    def evaluate(self):
+        """Top-level evaluation: parse expression and expect EOF."""
+        result = self.parse(0)
+        self._expect('EOF')
+        return result
+
+
+def evaluate(expr: str):
+    return Parser(expr).evaluate()
+
+
+if __name__ == "__main__":
+    tests = [
+        "1 + 2 * 3",
+        "(1+2)*3",
+        "-3+5*2",
+        "10/2/5",
+        "1 + 2 * (3 + 4) - 5",
+        "2^3^2",        # 2^(3^2) = 512 (right-associative)
+        "3!",           # 6
+        "2.0*3!",         # 12
+        "-3!",          # -(3!) = -6
+        "(3+2)!",       # 120
+        "-(3+2)!",      # -120
+        "1 @ 3"         # Syntax error
+    ]
+    for t in tests:
+        try:
+            print(t, "=", evaluate(t))
+        except Exception as e:
+            print(f"{t}: {e}")
+

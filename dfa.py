@@ -178,12 +178,43 @@ class DFA:
     
         return finalized
 
-    def match(self, text, *, greedy=True):
-        end_index = self._span_from(text, 0, greedy=greedy)
-        if end_index is None:
-            return {}
-        return self._match_to_end(text, 0, end_index)
 
+    def match(self, text, *, greedy=True):
+        return self._run_from(text, 0, greedy=greedy)
+
+
+    def _run_from(self, text, offset, *, greedy=True):
+        """
+        Single pass: run DFA from offset, collect capture groups, track match end.
+        Stops when we hit empty state. Match end is the latest nullable index.
+        Returns (end_index, groups); (None, {}) if no match.
+        """
+        group_info = GroupInfo()
+        last_index = None
+        last_state = None
+    
+        for step in self.run(text, index=offset):
+            state = step.state
+    
+            if state.regex.isempty:
+                break
+    
+            group_info.step(step.index, step.goto.events)
+    
+            if state.regex.isnullable():
+                last_index = step.index + 1
+                last_state = state
+                if not greedy:
+                    break
+    
+        if last_index is None:
+            return None, {}
+    
+        close_events = {e for e in last_state.prefix_events if e.kind == event.CLOSE}
+        if close_events:
+            group_info.step(last_index, close_events)
+    
+        return last_index, group_info.finalize(offset, last_index)
 
     # Skip over known bad start characters
     #
@@ -192,6 +223,7 @@ class DFA:
         while offset < n and self.initial.goto[ord(s[offset])]._next.regex.isempty:
             offset += 1
         return offset
+
 
     def search(self, text, *, greedy=True, all=False):
         """
@@ -209,83 +241,58 @@ class DFA:
               (start, end) is one non-overlapping match for that group.
         """
         n = len(text)
+        offset = 0
     
         if not all:
-            offset = self._skip(text, 0)
             while offset < n:
-                end_index = self._span_from(text, offset, greedy=greedy)
-    
-                if end_index is not None:
-                    return self._match_to_end(text, offset, end_index)
-    
-                offset = self._skip(text, offset + 1)
-    
+                offset = self._skip(text, offset)
+                if offset >= n:
+                    break
+                end_index, groups = self._run_from(text, offset, greedy=greedy)
+                if groups:
+                    return groups
+                offset += 1
             return {}
-
+    
         all_groups = {}
-        offset = self._skip(text, 0)
-    
         while offset < n:
-            end_index = self._span_from(text, offset, greedy=greedy)
-    
-            if end_index is None:
-                offset = self._skip(text, offset + 1)
+            offset = self._skip(text, offset)
+            if offset >= n:
+                break
+            end_index, groups = self._run_from(text, offset, greedy=greedy)
+            if not groups:
+                offset += 1
                 continue
-    
-            groups = self._match_to_end(text, offset, end_index)
-    
             for gid, intervals in groups.items():
                 all_groups.setdefault(gid, []).extend(intervals)
-    
-            offset = self._skip(text, end_index)
+            offset = end_index
     
         return all_groups
 
-    def _span_from(self, text, offset, *, greedy=True):
-        """
-        Return the best end index (exclusive) of a match starting at offset,
-        or None if no match.
-        """
-        latest_end = None
-    
-        for step in self.run(text, index=offset):
-            state = step.state
-    
-            if state.regex.isempty:
-                return latest_end
-    
-            if state.regex.isnullable():
-                latest_end = step.index + 1
-                if not greedy:
-                    return latest_end
-    
-        return latest_end
-    
 
-    def _match_to_end(self, text, offset, end_index):
-        """
-        Run DFA from offset up to end_index and compute capture groups.
-        """
-        group_info = GroupInfo()
-        last_state = self.initial
-    
-        for step in self.run(text, index=offset):
-            if step.index >= end_index:
-                break
-    
-            state = step.state
-            if state.regex.isempty:
-                break
-    
-            group_info.step(step.index, step.goto.events)
-            last_state = state
-    
-        # apply boundary CLOSE events at the match endpoint
-        close_events = {e for e in last_state.prefix_events if e.kind == event.CLOSE}
-        if close_events:
-            group_info.step(end_index, close_events)
-    
-        return group_info.finalize(offset, end_index)
+    def lex(self, text):
+        index = 0
+        while index < len(text):
+            end_index, info = self._run_from(text, index, greedy=True)
+
+            kind = None
+            for gid, intervals in info.items():
+                # Skip group 0 since we want explicit capture groups
+                #
+                if not isinstance(gid, int):
+                    for _begin, _end in intervals:
+                        # Only choose a match for the entire span
+                        #
+                        if _begin == index and _end == end_index:
+                            kind = gid
+                            token = text[index:end_index]
+
+            if kind:
+                yield (kind, token, index, end_index)
+                index = end_index
+                continue
+
+            break
 
 
 class DFAState:
@@ -349,11 +356,11 @@ class GroupInfo:
         if not events:
             return 
 
-        # Handle close events first 
-        # 
         closes = [e for e in events if e.kind == event.CLOSE]
         opens  = [e for e in events if e.kind == event.OPEN]
 
+        # Handle close events first 
+        # 
         for e in closes:
             gid = e.gid
             if gid in self.active:

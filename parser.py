@@ -304,6 +304,7 @@ class Parser:
         ('left', 'OR', 'CARET', 'MINUS'),
         ('left', 'AND'),
         ('right', 'NOT'),
+        ('left', 'CONCAT')
     )
 
     def p_expr_and(self, p):
@@ -327,7 +328,7 @@ class Parser:
         p[0] = regex.RegexNot(p[2], **p[1].kwds)
 
     def p_expr_concat(self, p):
-        'expression : concat'
+        'expression : concat %prec CONCAT'
         p[0] = p[1]
 
     def p_concat_list(self, p):
@@ -526,6 +527,10 @@ class Parser:
 
     def p_literal_id(self, p):
         'literal : ID'
+        p[0] = regex.RegexSym(p[1].value, **p[1].kwds)
+
+    def p_literal_minus(self, p):
+        'literal : MINUS'
         p[0] = regex.RegexSym(p[1].value, **p[1].kwds)
 
     def p_literal_escaped(self, p):
