@@ -1,11 +1,4 @@
-<h1>
-   <img src="images/pyre.png" alt="pyre logo" width="80" style="vertical-align: middle;">
-   pyre — A Regular Expression Engine Based on Derivatives
-</h1>
-
-<div align="center" style="padding: 10px;">
-  <img src="images/Regular Expressions.png" width="30%">
-</div>
+# pyre — A Regular Expression Engine Based on Derivatives
 
 **pyre** is a Python implementation of a regular-expression engine built using
 **Brzozowski derivatives**. Unlike traditional engines that first translate the
@@ -23,32 +16,29 @@ The project includes:
 - DFA construction using derivatives
 - Capture-group support
 - `match()` and `search()` APIs
-- A command-line interface called **`pyre`**
+- An example calculator app using lexer feature
+- A command-line interface called `**pyre`**
 
 ---
 
 ## Background and References
 
 1. **Implementing a More Powerful Regex (original 2013 blog post)**
-   Andrew Kuhnhausen 
+  Andrew Kuhnhausen 
    Available via the Internet Archive (Wayback Machine):
-   https://web.archive.org/web/20171223232901/http://blog.errstr.com/2013/01/22/implementing-a-more-powerful-regex/
-
-2. **Regular-expression derivatives reexamined**  
-   Matthew Owens, John Reppy, Aaron Turon  
-   *Journal of Functional Programming*, Vol 19 Issue 2, March 2009  
-
-3. **Design and Implementation of a validating XML parser in Haskell**  
-   Master's Thesis — Martin Schmidt  
-   https://www.fh-wedel.de/~si/HXmlToolbox/thesis/
-
+   [https://web.archive.org/web/20171223232901/http://blog.errstr.com/2013/01/22/implementing-a-more-powerful-regex/](https://web.archive.org/web/20171223232901/http://blog.errstr.com/2013/01/22/implementing-a-more-powerful-regex/)
+2. **Regular-expression derivatives reexamined**
+  Matthew Owens, John Reppy, Aaron Turon  
+   *Journal of Functional Programming*, Vol 19 Issue 2, March 2009
+3. **Design and Implementation of a validating XML parser in Haskell**
+  Master's Thesis — Martin Schmidt  
+   [https://www.fh-wedel.de/~si/HXmlToolbox/thesis/](https://www.fh-wedel.de/~si/HXmlToolbox/thesis/)
 4. **Regular Expression Matching Can Be Simple And Fast (but is slow in Java, Perl, PHP, Python, Ruby, ...)**
-   Russ Cox  
-   https://swtch.com/~rsc/regexp/regexp1.html
-
-5. **Janusz A. Brzozowski (1964)**  
-   *Derivatives of Regular Expressions*  
-   Journal of the ACM 11: 481–494  
+  Russ Cox  
+   [https://swtch.com/~rsc/regexp/regexp1.html](https://swtch.com/~rsc/regexp/regexp1.html)
+5. **Janusz A. Brzozowski (1964)**
+  *Derivatives of Regular Expressions*  
+   Journal of the ACM 11: 481–494
 
 ---
 
@@ -112,25 +102,89 @@ print(result2)  # {1: (0, 1), 0: (0, 2)}
 
 ---
 
+## Example Application
+
+In `examples` there's a `calc` program which shows how you can use the library to construct a lexer.
+
+The most interesting bit is here:
+
+```python
+class Lexer:
+    # Rule order is law out here: first match wins when two patterns can hit the same spot.
+    _SPECS = [
+        ('WS',        r"\s+"),
+        ('NUMBER',    r"\d+\.\d*|\.\d+|\d+"),  # 123, 123.45, .45, 123.
+        ('PLUS',      r"\+"),
+        ('MINUS',     r"-"),
+        ('TIMES',     r"\*"),
+        ('DIVIDE',    r"/"),
+        ('POWER',     r"\^"),
+        ('FACTORIAL', r"!"),
+        ('LPAREN',    r"\("),
+        ('RPAREN',    r"\)"),
+        ('OTHER',     r".")
+    ]
+
+    re_spec = "|".join(f"(?P<{kind}>{pat})" for kind, pat in _SPECS)
+    _CALC_DFA = pyre.compile(re_spec)
+
+    def __init__(self, text: str):
+        self.text = text
+        self.tokens = list(self._lex_tokens())
+        self.pos = 0
+
+    def _convert_number(self, s: str):
+        return float(s) if "." in s else int(s)
+
+    def _lex_tokens(self):
+        for kind, token, start, end in self._CALC_DFA.lex(self.text):
+
+            if kind == "WS":
+                continue
+
+            if kind == "NUMBER":
+                value = self._convert_number(token)
+            else:
+                value = token
+
+            yield Token(kind, value, token, start, end)
+
+        eof = len(self.text)
+        yield Token('EOF', '<EOF>', '', eof, eof)
+```
+
+The token types are assembled into a large alternation. Internally this is what lexers do when you give it a series of rules. You can perform the same operations using Python's `re` but this is slightly more compact.
+
+---
+
 ## Project Structure
 
-    pyre/
-      __init__.py
-      cli.py
-      dfa.py
-      event.py
-      parser.py
-      pyre
-      regex.py
-      util.py
-      test/
-        __init__.py
-        test_basic.py
-        test_boolean.py
-        test_capture.py
-        test_common.py
-        test_repeat.py
-
+```
+ ├── .gitignore
+ ├── README.md
+ ├── __init__.py
+ ├── cli.py
+ ├── dfa.py
+ ├── event.py
+ ├── examples
+ │   └── calc
+ ├── images
+ │   ├── Regular Expressions.png
+ │   └── pyre.png
+ ├── parser.py
+ ├── pyre
+ ├── regex.py
+ ├── scripts
+ │   └── get_ply.sh
+ ├── test
+ │   ├── __init__.py
+ │   ├── test_basic.py
+ │   ├── test_boolean.py
+ │   ├── test_capture.py
+ │   ├── test_common.py
+ │   └── test_repeat.py
+ └── util.py
+```
 
 ---
 
