@@ -304,7 +304,7 @@ class Parser:
         ('left', 'OR', 'CARET', 'MINUS'),
         ('left', 'AND'),
         ('right', 'NOT'),
-        ('left', 'CONCAT')
+        ('left', 'CONCAT'),
     )
 
     def p_expr_and(self, p):
@@ -323,10 +323,6 @@ class Parser:
         'expression : expression CARET expression'
         p[0] = regex.RegexXor(p[1], p[3], **p[2].kwds)
 
-    def p_expr_not(self, p):
-        'expression : NOT expression'
-        p[0] = regex.RegexNot(p[2], **p[1].kwds)
-
     def p_expr_concat(self, p):
         'expression : concat %prec CONCAT'
         p[0] = p[1]
@@ -338,6 +334,11 @@ class Parser:
     def p_concat_primary(self, p):
         'concat : primary'
         p[0] = p[1]
+
+    def p_primary_not(self, p):
+        'primary : NOT primary'
+        p[0] = regex.RegexNot(p[2], **p[1].kwds)
+
 
     def p_primary_star(self, p):
         'primary : primary STAR'

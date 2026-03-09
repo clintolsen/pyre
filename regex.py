@@ -1029,7 +1029,26 @@ class CharSet:
 
         return CharSet(*out)
 
+
     def get_int_sets(self):
+        """
+        Decompose each bitmask in the charset into a list of integer code-point intervals.
+  
+        Each bitmask represents a character equivalence class — a set of code
+        points that produce the same DFA transition. Bits are extracted,
+        converted to code point indices, and adjacent values are merged into
+        [lo, hi] ranges.
+  
+        Returns a list of interval lists, one per equivalence class:
+  
+            [
+              [ [65], [68, 90] ],   # one mask: {65} ∪ [68..90]
+              [ [48, 57] ],         # another mask: [48..57]
+              ...
+            ]
+  
+        Each interval is either [i] (singleton) or [lo, hi] (inclusive range).
+        """
         ints = []
 
         for chset in sorted(self.charset):
