@@ -89,7 +89,8 @@ class DFA:
                         todo.add(_next)
 
         self.states.add(DFAState.empty())
-        DFAState.empty().name = f'q{len(self.states)}'
+        if DFAState.empty().name is None:
+            DFAState.empty().name = f'q{len(self.states)}'
 
         if LOG.getEffectiveLevel() == logging.DEBUG:
             for state in sorted(self.states, key=lambda x: x.name):
