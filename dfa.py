@@ -53,8 +53,8 @@ class DFA:
 
         while todo:
             current = todo.pop()
-            self.states.add(current)
             current.name = f'q{len(self.states)}'
+            self.states.add(current)
 
             LOG.debug(f'Current state {current.name}: {current}')
 
