@@ -17,7 +17,7 @@ The project includes:
 - Capture-group support
 - `match()` and `search()` APIs
 - An example calculator app using lexer feature
-- A command-line interface called `**pyre`**
+- A command-line interface called `pyre`
 
 ---
 
