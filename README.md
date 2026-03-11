@@ -189,7 +189,8 @@ The token types are assembled into a large alternation. Internally this is what 
  ├── dfa.py
  ├── event.py
  ├── examples
- │   └── calc
+ │   ├── calc
+ │   └── ccomment
  ├── images
  │   ├── Regular Expressions.png
  │   └── pyre.png
