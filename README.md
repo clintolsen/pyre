@@ -109,6 +109,13 @@ pyre treats all patterns as verbose (similar to Python's `re.X` flag, but always
 Unescaped whitespace is ignored and `#` introduces a comment to end of line. This
 encourages writing self-documenting patterns without any extra flags:
 
+The following showcases how useful language complement works. Without it, you'd
+have to use something like:
+
+`'/\* ( [^*] | \*+ [^/] )* \*/'`
+
+That has some serious `¯_(ツ)_/¯` vibes.
+
 ```sh
 pyre '/\*         # Comment start
       ~(          # Complement: strings NOT containing */
