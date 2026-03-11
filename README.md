@@ -16,6 +16,7 @@ The project includes:
 - DFA construction using derivatives
 - Capture-group support
 - `match()` and `search()` APIs
+- Verbose patterns ala Python `re.X` with inline comments `#` allowed
 - An example calculator app using lexer feature
 - A command-line interface called `pyre`
 
@@ -99,6 +100,27 @@ print(result1)  # {1: (0, 1), 0: (0, 2)}
 result2 = pyre.match(compiled, "bc")
 print(result2)  # {1: (0, 1), 0: (0, 2)}
 ```
+
+---
+
+## Verbose Patterns by Default
+
+pyre treats all patterns as verbose (similar to Python's `re.X` flag, but always on).
+Unescaped whitespace is ignored and `#` introduces a comment to end of line. This
+encourages writing self-documenting patterns without any extra flags:
+
+```sh
+pyre '/\*         # Comment start
+      ~(          # Complement: strings NOT containing */
+        .*        # Any prefix
+        \*/       # The forbidden sequence
+        .*        # Any suffix
+      )           # End complement
+      \*/         # Comment end' \
+    `<file`>
+```
+
+Use `\s` (backslash-space) or a character class to match a literal space.
 
 ---
 

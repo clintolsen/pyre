@@ -1,0 +1,10 @@
+#!/bin/sh
+
+./pyre -a '/\*         # Comment start
+           ~(          # Complement: strings NOT containing */
+             .*        # Any prefix
+             \*/       # The forbidden sequence
+             .*        # Any suffix
+           )           # End complement
+           \*/         # Comment end' \
+    "$1"
