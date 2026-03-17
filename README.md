@@ -4,10 +4,10 @@
 **Brzozowski derivatives**. Unlike traditional engines that first translate the
 expression into an NFA and then to a DFA, a derivative-based engine constructs
 the DFA directly from the expression by repeatedly applying derivative rules.
-This also allows novel set operations like language complement `~RE` and
-intersection `RE & RE` in an efficient manner. Because matching is performed
-on the resulting DFA, the recognizer runs in linear time and does not require
-backtracking.
+This also allows novel set operations like language complement (NOT) `~`,
+intersection (AND) `&`, symmetric difference (XOR) `^`, and difference `-` in an
+efficient manner. Because matching is performed on the resulting DFA, the
+recognizer runs in linear time and does not require backtracking.
 
 The project includes:
 
@@ -65,7 +65,7 @@ bash scripts/get_ply.sh
 ## Command Line Usage
 
 ```bash
-pyre [-h] [--debug] regex target
+pyre [-h] [--debug] [--no-greedy] [--all] regex [target]
 ```
 
 Example:
@@ -103,18 +103,14 @@ print(result2)  # {1: (0, 1), 0: (0, 2)}
 
 ---
 
-## Verbose Patterns by Default
+## Pyre Uses Verbose Patterns
 
-pyre treats all patterns as verbose (similar to Python's `re.X` flag, but always on).
-Unescaped whitespace is ignored and `#` introduces a comment to end of line. This
-encourages writing self-documenting patterns without any extra flags:
+`Pyre` treats all patterns as verbose (similar to Python's `re.X` flag, but
+always on).  Unescaped whitespace is ignored and `#` introduces a comment to end
+of line. This encourages writing self-documenting patterns without any extra
+flags:
 
-The following showcases how useful language complement works. Without it, you'd
-have to use something like:
-
-`'/\* ( [^*] | \*+ [^/] )* \*/'`
-
-That has some serious `¯_(ツ)_/¯` vibes.
+The following showcases how useful language complement works.
 
 ```sh
 pyre '/\*         # Comment start
@@ -126,6 +122,12 @@ pyre '/\*         # Comment start
       \*/         # Comment end' \
     `<file`>
 ```
+
+Without complement, you'd have to use something like:
+
+`'/\* ( [^*] | \*+ [^/] )* \*/'`
+
+That has some serious `¯_(ツ)_/¯` vibes.
 
 Use `\s` (backslash-space) or a character class to match a literal space.
 
@@ -183,6 +185,28 @@ class Lexer:
 ```
 
 The token types are assembled into a large alternation. Internally this is what lexers do when you give it a series of rules. You can perform the same operations using Python's `re` but this is slightly more compact.
+
+---
+
+## Powerful Set Operators
+
+What if we wanted to test whether two REs recognize the same language?
+
+```sh
+pyre -d 'a(?:b|c) ^ (?:ab | ac)'
+```
+
+```
+q0: DFAState(name=q0 regex=a·(b | c) ^ (a·b | a·c)) (events=set())
+    [a] Goto(next=q1 events=set())
+    [\x00-`b-ÿ] Goto(next=q1 events=set())
+q1: DFAState(name=q1 regex=∅) (events=set())
+    [\x00-ÿ] Goto(next=q1 events=set())
+Total DFA states: 2
+Total RE instances: 13
+```
+
+You can then iterate over the DFA and confirm it is either empty or has no accepting states.
 
 ---
 

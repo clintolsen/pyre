@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 import logging
 
-from . import search, fullmatch
+from . import search, fullmatch, compile
 from . import regex
 from . import util
 
@@ -32,7 +32,7 @@ def main(argv=None):
         help='Return all matches'
     )
     argparser.add_argument('regex', help='Regular expression')
-    argparser.add_argument('target', help='String or file to search')
+    argparser.add_argument('target', help='String or file to search', nargs='?')
 
     args = argparser.parse_args(argv)
 
@@ -42,43 +42,46 @@ def main(argv=None):
         stream=sys.stdout
     )
 
-    target = Path(args.target)
-    if target.is_file():
-        with open(target) as f:
-            file = f.read()
+    if args.target:
+        target = Path(args.target)
+        if target.is_file():
+            with open(target) as f:
+                file = f.read()
 
-        try:
-            groups = search(args.regex, file, all=args.all, greedy=args.greedy)
-        except ValueError as e:
-            LOG.error(e)
-            return 1
+            try:
+                groups = search(args.regex, file, all=args.all, greedy=args.greedy)
+            except ValueError as e:
+                LOG.error(e)
+                return 1
 
-        LOG.debug(f'Groups: {groups}')
-        flatten = [interval for group in groups.values() for interval in group]
-        intervals = regex.merge_intervals(flatten)
-        LOG.debug(f'Merged intervals: {intervals}')
+            LOG.debug(f'Groups: {groups}')
+            flatten = [interval for group in groups.values() for interval in group]
+            intervals = regex.merge_intervals(flatten)
+            LOG.debug(f'Merged intervals: {intervals}')
 
-        i = 0
-        while i < len(file):
-            begin = -1
-            end = -1
+            i = 0
+            while i < len(file):
+                begin = -1
+                end = -1
 
-            if intervals:
-                begin, end = intervals.pop(0)
+                if intervals:
+                    begin, end = intervals.pop(0)
 
-            print(file[i:begin], end='')
+                print(file[i:begin], end='')
 
-            if begin > -1:
-                print(util.highlight(file[begin:end]), end='')
-                i = end
-            else:
-                print()
-                break
+                if begin > -1:
+                    print(util.highlight(file[begin:end]), end='')
+                    i = end
+                else:
+                    print()
+                    break
+        else:
+            try:
+                groups = fullmatch(args.regex, args.target)
+            except ValueError as e:
+                LOG.error(e)
+                return 1
+
+            print(groups)
     else:
-        try:
-            groups = fullmatch(args.regex, args.target)
-        except ValueError as e:
-            LOG.error(e)
-            return 1
-
-        print(groups)
+        print(compile(args.regex))
