@@ -352,15 +352,15 @@ class RegexOr(Regex):
     def derive(self, ch, states, negate_states=False):
         lstates = set()
         rstates = set()
-    
+
         left  = self.left.derive(ch, lstates, negate_states)
         right = self.right.derive(ch, rstates, negate_states)
-    
+
         if not left.isempty:
             states |= lstates
         if not right.isempty:
             states |= rstates
-    
+
         return RegexOr(left, right)
 
     def __str__(self):
@@ -685,12 +685,12 @@ class RegexConcat(Regex):
             #
             rstates = set()
             result = self.right.derive(ch, rstates, negate_states)
-    
+
             # Only record the marker if this path succeeds
             if not result.isempty:
                 states.add(self.left)
                 states |= rstates
-    
+
             return result
 
         lstates = set()
@@ -895,7 +895,7 @@ class RegexMarker(Regex):
     A zero-width marker node that doesn't consume input but carries events.
     """
     sym = '⟂'
-    
+
     def __new__(cls, events=(), **kwargs):
         key = (cls, tuple(events), frozenset(kwargs.items()))
 
@@ -909,7 +909,7 @@ class RegexMarker(Regex):
 
     def nullable(self):
         return RegexEpsilon()
-    
+
     def derive(self, ch, states, negate_states=False):
         # Markers don't match characters
         return RegexEmpty()
@@ -934,36 +934,36 @@ class CharSet:
         if len(items) == 1 and isinstance(items[0], CharSet):
             # Make a copy so callers can't mutate through aliasing
             #
-            self.charset = set(items[0].charset)
+            self.masks = set(items[0].masks)
             return
 
         out = set()
         for x in items:
             if isinstance(x, CharSet):
-                out.update(x.charset)
+                out.update(x.masks)
             else:
                 # Treat x as a single mask (int). If you want to accept
                 # iterables of masks too, do it explicitly (see note below).
                 if x:
                     out.add(x)
 
-        self.charset = out
+        self.masks = out
 
     @classmethod
     def fmt_mask(cls, mask: int, *, bracket: bool = True) -> str:
         full = CHARSET_MAX - 1
         mask &= full
 
-        # ayyo: empty set, no chars, no mercy
         if mask == 0:
-            return "[]" if bracket else ""
+            return '[]' if bracket else ''
 
-        # ayyy: full coverage, whole dang byte range
         if mask == full:
-            inside = r"\x00-\xff"
-            return f"[{inside}]" if bracket else inside
+            return 'Σ' if bracket else r'\x00-\xff'
 
         inside = cls._fmt_mask_inside(mask)
+        comp_inside = cls._fmt_mask_inside(full & ~mask)
+        if len(comp_inside) < len(inside):
+            inside = f"^{comp_inside}"
         return f"[{inside}]" if bracket else inside
 
     @classmethod
@@ -994,7 +994,7 @@ class CharSet:
             else:
                 parts.append(f"{CharSet._fmt_char(rng[0])}")
         return sep.join(parts)
-    
+
 
     @staticmethod
     def _fmt_char(code: int | str) -> str:
@@ -1004,25 +1004,25 @@ class CharSet:
         else:
             ch = code
             val = ord(ch)
-    
+
         if ch.isprintable() and ch not in ("\\", "]", "-", "^"):
             return ch
-    
+
         return f"\\x{val:02x}"
 
     def add(self, item: int) -> None:
         """Wrapper for add() that ignores 0"""
         if item:
-            self.charset.add(item)
+            self.masks.add(item)
 
     def __and__(self, other: "CharSet") -> "CharSet":
         """Pairwise intersection of two CharSets."""
-        if not self.charset or not other.charset:
+        if not self.masks or not other.masks:
             return CharSet()
 
         out = set()
-        for i in self.charset:
-            for j in other.charset:
+        for i in self.masks:
+            for j in other.masks:
                 mask = i & j
                 if mask:
                     out.add(mask)
@@ -1033,30 +1033,30 @@ class CharSet:
     def get_int_sets(self):
         """
         Decompose each bitmask in the charset into a list of integer code-point intervals.
-  
+
         Each bitmask represents a character equivalence class — a set of code
         points that produce the same DFA transition. Bits are extracted,
         converted to code point indices, and adjacent values are merged into
         [lo, hi] ranges.
-  
+
         Returns a list of interval lists, one per equivalence class:
-  
+
             [
               [ [65], [68, 90] ],   # one mask: {65} ∪ [68..90]
               [ [48, 57] ],         # another mask: [48..57]
               ...
             ]
-  
+
         Each interval is either [i] (singleton) or [lo, hi] (inclusive range).
         """
         ints = []
 
-        for chset in sorted(self.charset):
+        for mask in sorted(self.masks):
             charclass = []
-            while chset:
-                lsb = chset & -chset
+            while mask:
+                lsb = mask & -mask
                 i = lsb.bit_length() - 1
-                chset &= ~lsb
+                mask &= ~lsb
                 charclass.append([i])
 
             ints.append(merge_intervals(charclass, merge_adjacent=True))
@@ -1091,13 +1091,13 @@ class CharSet:
 
     def contains_ord(self, code: int) -> bool:
         mask = 1 << code
-        return any(mask & m for m in self.charset)
+        return any(mask & m for m in self.masks)
 
     def __str__(self):
-        return f"{sorted(self.charset)}"
+        return f"{sorted(self.masks)}"
 
     def __repr__(self):
-        return f"CharSet({sorted(self.charset)})"
+        return f"CharSet({sorted(self.masks)})"
 
 
 # Merge intervals including adjacent, assumed sorted based on the left value.

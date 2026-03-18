@@ -95,20 +95,17 @@ class DFA:
         if LOG.getEffectiveLevel() == logging.DEBUG:
             for state in sorted(self.states, key=lambda x: x.name):
                 label = state.name
-    
+
                 if state.regex.isnullable():
                     label = util.highlight(label)
-    
+
                 print(f'{label}: {state} (events={state.prefix_events})')
-    
-                classes = state.regex.charset.get_int_sets()
-    
-                for charset in classes:
-                    if charset:
-                       goto = state.goto[charset[0][0]]
-                       inside = regex.CharSet.fmt_ranges(charset)
-                       print(f"    [{inside}] {goto}")
-    
+
+                for mask in sorted(state.regex.charset.masks):
+                    lsb_pos = (mask & -mask).bit_length() - 1
+                    goto = state.goto[lsb_pos]
+                    print(f"    {regex.CharSet.fmt_mask(mask)} {goto}")
+
         LOG.debug('Total DFA states: %d' % len(self.states))
         LOG.debug('Total RE instances: %d' % len(regex.Regex._instance))
 
@@ -116,7 +113,7 @@ class DFA:
     def run(self, text, index=0):
         """
         Iterate over `text[index:]`.
-    
+
         Yields DFAStep(index, char, prev_state, state, goto)
         where:
           - prev_state: state before reading char
@@ -137,46 +134,46 @@ class DFA:
                 goto=goto,
             )
             state = _next
-    
+
 
     def fullmatch(self, text):
         """
         Full-string match against `text`.
-    
+
         Returns:
             {} if no match
-    
+
             Otherwise:
                 {group_id: [(start, end), ...]}
             where start/end are 0-based indices into `text`, end-exclusive.
         """
         group_info = GroupInfo()
-    
+
         LOG.debug(f'Match: {self.initial} against {text}')
-    
+
         state = self.initial
-    
+
         for step in self.run(text):
             state = step.state
             LOG.debug(f'Match: Step {step}')
-    
+
             # Dead state
             #
             if state.regex.isempty:
                 return {}
-    
+
             # Track capture groups
             group_info.step(step.index, step.goto.events)
-    
+
         if not state.regex.isnullable():
             return {}
-    
+
         end_index = len(text)
-    
+
         # Finalize match span [0, end_index) and guarantee group 0 exists
         #
         finalized = group_info.finalize(0, end_index)
-    
+
         return finalized
 
 
@@ -193,28 +190,28 @@ class DFA:
         group_info = GroupInfo()
         last_index = None
         last_state = None
-    
+
         for step in self.run(text, index=offset):
             state = step.state
-    
+
             if state.regex.isempty:
                 break
-    
+
             group_info.step(step.index, step.goto.events)
-    
+
             if state.regex.isnullable():
                 last_index = step.index + 1
                 last_state = state
                 if not greedy:
                     break
-    
+
         if last_index is None:
             return None, {}
-    
+
         close_events = {e for e in last_state.prefix_events if e.kind == event.CLOSE}
         if close_events:
             group_info.step(last_index, close_events)
-    
+
         return last_index, group_info.finalize(offset, last_index)
 
     # Skip over known bad start characters
@@ -229,13 +226,13 @@ class DFA:
     def search(self, text, *, greedy=True, all=False):
         """
         Search in `text`.
-    
+
         Greedy: Find the longest match.
-    
+
         If all is False (default):
             - returns {} if no match
             - otherwise returns {group_id: [(start, end)]} for the first match
-    
+
         If all is True:
             - returns {} if no match
             - otherwise returns {group_id: [(start, end), ...]} where each
@@ -243,7 +240,7 @@ class DFA:
         """
         n = len(text)
         offset = 0
-    
+
         if not all:
             while offset < n:
                 offset = self._skip(text, offset)
@@ -254,7 +251,7 @@ class DFA:
                     return groups
                 offset += 1
             return {}
-    
+
         all_groups = {}
         while offset < n:
             offset = self._skip(text, offset)
@@ -267,7 +264,7 @@ class DFA:
             for gid, intervals in groups.items():
                 all_groups.setdefault(gid, []).extend(intervals)
             offset = end_index
-    
+
         return all_groups
 
 
@@ -336,7 +333,7 @@ class DFAState:
 
 def compile(expr):
     ''' Construct a DFA from a regular expression '''
-     
+
     dfa = DFA(expr)
     return dfa
 
@@ -355,13 +352,13 @@ class GroupInfo:
         events = set of Event(...) from the transition (goto.events)
         """
         if not events:
-            return 
+            return
 
         closes = [e for e in events if e.kind == event.CLOSE]
         opens  = [e for e in events if e.kind == event.OPEN]
 
-        # Handle close events first 
-        # 
+        # Handle close events first
+        #
         for e in closes:
             gid = e.gid
             if gid in self.active:
