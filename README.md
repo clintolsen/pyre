@@ -6,7 +6,8 @@
 <div align="center" style="padding: 10px;">
   <img src="images/Regular Expressions.png" width="30%">
 </div>
-**pyre** is a Python implementation of a regular-expression engine built using
+
+**Pyre** is a Python implementation of a regular-expression engine built using
 **Brzozowski derivatives**. Unlike traditional engines that first translate the
 expression into an NFA and then to a DFA, a derivative-based engine constructs
 the DFA directly from the expression by repeatedly applying derivative rules.
