@@ -1,5 +1,11 @@
-# pyre — A Regular Expression Engine Based on Derivatives
+<h1>
+   <img src="images/pyre.png" alt="pyre logo" width="80" style="vertical-align: middle;">
+   pyre — A Regular Expression Engine Based on Derivatives
+</h1>
 
+<div align="center" style="padding: 10px;">
+  <img src="images/Regular Expressions.png" width="30%">
+</div>
 **pyre** is a Python implementation of a regular-expression engine built using
 **Brzozowski derivatives**. Unlike traditional engines that first translate the
 expression into an NFA and then to a DFA, a derivative-based engine constructs
@@ -25,20 +31,20 @@ The project includes:
 ## Background and References
 
 1. **Implementing a More Powerful Regex (original 2013 blog post)**
-  Andrew Kuhnhausen 
+  Andrew Kuhnhausen
    Available via the Internet Archive (Wayback Machine):
    [https://web.archive.org/web/20171223232901/http://blog.errstr.com/2013/01/22/implementing-a-more-powerful-regex/](https://web.archive.org/web/20171223232901/http://blog.errstr.com/2013/01/22/implementing-a-more-powerful-regex/)
 2. **Regular-expression derivatives reexamined**
-  Matthew Owens, John Reppy, Aaron Turon  
+  Matthew Owens, John Reppy, Aaron Turon
    *Journal of Functional Programming*, Vol 19 Issue 2, March 2009
 3. **Design and Implementation of a validating XML parser in Haskell**
-  Master's Thesis — Martin Schmidt  
+  Master's Thesis — Martin Schmidt
    [https://www.fh-wedel.de/~si/HXmlToolbox/thesis/](https://www.fh-wedel.de/~si/HXmlToolbox/thesis/)
 4. **Regular Expression Matching Can Be Simple And Fast (but is slow in Java, Perl, PHP, Python, Ruby, ...)**
-  Russ Cox  
+  Russ Cox
    [https://swtch.com/~rsc/regexp/regexp1.html](https://swtch.com/~rsc/regexp/regexp1.html)
 5. **Janusz A. Brzozowski (1964)**
-  *Derivatives of Regular Expressions*  
+  *Derivatives of Regular Expressions*
    Journal of the ACM 11: 481–494
 
 ---
