@@ -22,6 +22,13 @@ class TestCaptureGroups(RegexTestCase):
         self.assertEqual(result[0], [(0, 1)])
         self.assertEqual(result[1], [(0, 1)])
 
+    def test_match_returns_groups(self):
+        """match() returns the same group shape as fullmatch()."""
+        result = pyre.match("(a)b", "ab")
+
+        self.assertEqual(result[0], [(0, 2)])
+        self.assertEqual(result[1], [(0, 1)])
+
     def test_capture_in_sequence(self):
         """Capture group in a sequence: (a)b"""
         result = pyre.fullmatch("(a)b", "ab")

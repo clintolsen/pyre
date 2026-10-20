@@ -94,7 +94,7 @@ import pyre
 # Group 0 = full match, Group 1 = first capture group (a|b)
 #
 result = pyre.match("(a|b)c", "ac")
-print(result)  # {1: (0, 1), 0: (0, 2)}
+print(result)  # {1: [(0, 1)], 0: [(0, 2)]}
 
 results = pyre.search("(a|b)c", "xxbcxx", all=True)
 print(results)  # {1: [(2, 3)], 0: [(2, 4)]}
@@ -103,9 +103,9 @@ print(results)  # {1: [(2, 3)], 0: [(2, 4)]}
 #
 compiled = pyre.compile("(a|b)c")
 result1 = pyre.match(compiled, "ac")
-print(result1)  # {1: (0, 1), 0: (0, 2)}
+print(result1)  # {1: [(0, 1)], 0: [(0, 2)]}
 result2 = pyre.match(compiled, "bc")
-print(result2)  # {1: (0, 1), 0: (0, 2)}
+print(result2)  # {1: [(0, 1)], 0: [(0, 2)]}
 ```
 
 ---

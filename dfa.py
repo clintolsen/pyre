@@ -178,7 +178,8 @@ class DFA:
 
 
     def match(self, text, *, greedy=True):
-        return self._run_from(text, 0, greedy=greedy)
+        _, groups = self._run_from(text, 0, greedy=greedy)
+        return groups
 
 
     def _run_from(self, text, offset, *, greedy=True):
@@ -363,7 +364,7 @@ class GroupInfo:
             gid = e.gid
             if gid in self.active:
                 start = self.active[gid]
-                self.final.setdefault(gid, []).append((start, index))
+                self.final[gid] = [(start, index)]
                 del self.active[gid]
 
         for e in opens:
@@ -385,7 +386,7 @@ class GroupInfo:
         # Close any still-active groups at end of match
         #
         for gid, start in self.active.items():
-            out.setdefault(gid, []).append((start, match_end))
+            out[gid] = [(start, match_end)]
 
         # Whole match
         #
