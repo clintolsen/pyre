@@ -106,6 +106,18 @@ result1 = pyre.match(compiled, "ac")
 print(result1)  # {1: [(0, 1)], 0: [(0, 2)]}
 result2 = pyre.match(compiled, "bc")
 print(result2)  # {1: [(0, 1)], 0: [(0, 2)]}
+
+# Parse when you want to compose, then compile once you are ready to match.
+# See "Powerful Set Operators" below for predicates.
+#
+a = pyre.parse("a(?:b|c)")
+b = pyre.parse("ab|ac")
+
+union        = pyre.compile(a | b)
+intersection = pyre.compile(a & b)
+xor          = pyre.compile(a ^ b)
+difference   = pyre.compile(a - b)
+complement   = pyre.compile(~a)
 ```
 
 ---
@@ -197,23 +209,31 @@ The token types are assembled into a large alternation. Internally this is what 
 
 ## Powerful Set Operators
 
-What if we wanted to test whether two REs recognize the same language?
+Test whether two REs recognize the same language, or whether one is a subset of another:
 
-```sh
-pyre -d 'a(?:b|c) ^ (?:ab | ac)'
+```python
+import pyre
+
+a  = pyre.parse("a(?:b|c)")
+b  = pyre.parse("ab|ac")
+ab = pyre.parse("ab")
+
+pyre.equal(a, b)                                   # True  — same language
+pyre.equal("a(?:b|c)", "ab|ac")                    # True  — string helper form
+pyre.compile(a ^ b).isempty()                      # True  — XOR is the empty language
+pyre.subset(ab, a)                                 # True  — ab ⊆ a(?:b|c)
+pyre.isempty("a & b")                              # True  — disjoint intersection
 ```
 
-```
-q0: DFAState(name=q0 regex=a·(b | c) ^ (a·b | a·c)) (events=set())
-    [a] Goto(next=q1 events=set())
-    [\x00-`b-ÿ] Goto(next=q1 events=set())
-q1: DFAState(name=q1 regex=∅) (events=set())
-    [\x00-ÿ] Goto(next=q1 events=set())
-Total DFA states: 2
-Total RE instances: 13
-```
+Set-operator composition lives on parsed `Regex` values. Compiled `DFA` values
+are executable matchers, so compose expressions before compiling. Operators do
+not parse strings implicitly; helper functions such as `pyre.equal()` and
+`pyre.isempty()` accept strings as a convenience.
 
-You can then iterate over the DFA and confirm it is either empty or has no accepting states.
+Set-operator composition is also language-level. If capture groups matter,
+parse one complete pattern so group numbering comes from a single parser pass;
+composing separately parsed fragments intentionally drops capture markers from
+the operands.
 
 ---
 

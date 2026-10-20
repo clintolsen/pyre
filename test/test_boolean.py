@@ -9,6 +9,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from test_common import RegexTestCase
+import pyre
 
 class TestBooleanOps(RegexTestCase):
     """
@@ -151,6 +152,86 @@ class TestBooleanOps(RegexTestCase):
                 left  = self.fullmatch(pattern_l, s)
                 right = self.fullmatch(pattern_r, s)
                 self.assertEqual(left, right)
+
+    def test_public_language_predicates(self):
+        a = pyre.parse("a(b|c)")
+        b = pyre.parse("ab|ac")
+        xor = pyre.compile(a ^ b)
+        intersection = pyre.compile(a & b)
+        ab = pyre.parse("ab")
+
+        self.assertTrue(xor.isempty())
+        self.assertTrue(pyre.equal(a, b))
+        self.assertTrue(pyre.equal("a(b|c)", "ab|ac"))
+        self.assertTrue(pyre.equal("(a)", "a"))
+        self.assertTrue(pyre.subset("ab", "a(b|c)"))
+        self.assertTrue(pyre.subset(ab, a))
+        self.assertFalse(intersection.isempty())
+
+    def test_parse_allows_precompile_composition(self):
+        a = pyre.parse("a(b|c)")
+        b = pyre.parse("ab|ac")
+        xor = pyre.compile(a ^ b)
+
+        self.assertTrue(xor.isempty())
+        self.assertTrue(pyre.equal(a, b))
+
+    def test_dfas_are_not_operator_composable(self):
+        a = pyre.compile("a(b|c)")
+        b = pyre.compile("ab|ac")
+        expr = pyre.parse("ab|ac")
+
+        with self.assertRaises(TypeError):
+            a ^ b
+
+        with self.assertRaises(TypeError):
+            a | b
+
+        with self.assertRaises(TypeError):
+            a & b
+
+        with self.assertRaises(TypeError):
+            a - b
+
+        with self.assertRaises(TypeError):
+            ~a
+
+        with self.assertRaises(TypeError):
+            expr ^ a
+
+        with self.assertRaises(TypeError):
+            a ^ expr
+
+    def test_operators_do_not_parse_strings_implicitly(self):
+        expr = pyre.parse("a")
+
+        with self.assertRaises(TypeError):
+            expr | "b"
+
+        with self.assertRaises(TypeError):
+            "b" | expr
+
+    def test_set_operator_composition_is_language_level(self):
+        composed = pyre.compile(pyre.parse("(a)") | pyre.parse("(b)"))
+        parsed_together = pyre.compile("(a)|(b)")
+
+        self.assertEqual(composed.fullmatch("a"), {0: [(0, 1)]})
+        self.assertEqual(composed.fullmatch("b"), {0: [(0, 1)]})
+        self.assertEqual(parsed_together.fullmatch("a"), {1: [(0, 1)], 0: [(0, 1)]})
+        self.assertEqual(parsed_together.fullmatch("b"), {2: [(0, 1)], 0: [(0, 1)]})
+
+    def test_isempty_helper(self):
+        self.assertTrue(pyre.isempty("a & b"))
+        self.assertFalse(pyre.isempty("a"))
+        self.assertFalse(pyre.isempty(pyre.compile("a|b")))
+
+    def test_equal_subset_false_cases(self):
+        self.assertFalse(pyre.equal("a", "b"))
+        self.assertFalse(pyre.equal(pyre.parse("a"), pyre.parse("b")))
+
+        # Superset is not a subset of its strict subset
+        self.assertFalse(pyre.subset("a(b|c)", "ab"))
+        self.assertFalse(pyre.subset(pyre.parse("a(b|c)"), pyre.parse("ab")))
 
 if __name__ == "__main__":
     unittest.main()

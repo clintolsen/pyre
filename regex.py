@@ -74,6 +74,61 @@ class Regex:
 
         return self._prefix_markers
 
+    def _language(self):
+        if self.ismarker:
+            return RegexEpsilon()
+        if hasattr(self, 'left') and hasattr(self, 'right'):
+            return self.__class__(
+                self.left._language(),
+                self.right._language(),
+            )
+        if hasattr(self, 'expr'):
+            return self.__class__(self.expr._language())
+        return self
+
+    def __or__(self, other):
+        if not isinstance(other, Regex):
+            return NotImplemented
+        return RegexOr(self._language(), other._language())
+
+    def __ror__(self, other):
+        if not isinstance(other, Regex):
+            return NotImplemented
+        return RegexOr(other._language(), self._language())
+
+    def __and__(self, other):
+        if not isinstance(other, Regex):
+            return NotImplemented
+        return RegexAnd(self._language(), other._language())
+
+    def __rand__(self, other):
+        if not isinstance(other, Regex):
+            return NotImplemented
+        return RegexAnd(other._language(), self._language())
+
+    def __xor__(self, other):
+        if not isinstance(other, Regex):
+            return NotImplemented
+        return RegexXor(self._language(), other._language())
+
+    def __rxor__(self, other):
+        if not isinstance(other, Regex):
+            return NotImplemented
+        return RegexXor(other._language(), self._language())
+
+    def __sub__(self, other):
+        if not isinstance(other, Regex):
+            return NotImplemented
+        return RegexDiff(self._language(), other._language())
+
+    def __rsub__(self, other):
+        if not isinstance(other, Regex):
+            return NotImplemented
+        return RegexDiff(other._language(), self._language())
+
+    def __invert__(self):
+        return RegexNot(self._language())
+
     # Allow for use in boolean contexts. If we're not empty, then we are True.
     #
     def __bool__(self):
@@ -1144,4 +1199,3 @@ def merge_intervals(intervals, merge_adjacent=False):
             merged[-1] = [top[0], ival[-1]]
 
     return merged
-

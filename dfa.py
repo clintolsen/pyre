@@ -293,6 +293,10 @@ class DFA:
 
             break
 
+    def isempty(self):
+        """Returns True if the language of this DFA is empty (no reachable accepting states)."""
+        return all(not state.regex.isnullable() for state in self.states)
+
 
 class DFAState:
     _empty = None
@@ -334,9 +338,7 @@ class DFAState:
 
 def compile(expr):
     ''' Construct a DFA from a regular expression '''
-
-    dfa = DFA(expr)
-    return dfa
+    return DFA(expr)
 
 class GroupInfo:
     """
