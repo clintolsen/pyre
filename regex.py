@@ -743,7 +743,11 @@ class RegexConcat(Regex):
 
             # Only record the marker if this path succeeds
             if not result.isempty:
-                states.add(self.left)
+                # Markers under a negated operand belong to strings that
+                # must not match, so they never report captures.
+                #
+                if not negate_states:
+                    states.add(self.left)
                 states |= rstates
 
             return result
@@ -767,7 +771,8 @@ class RegexConcat(Regex):
             #
             if not right.isempty:
                 states |= rstates
-                states |= self.left.prefix_markers()
+                if not negate_states:
+                    states |= self.left.prefix_markers()
 
         result = RegexOr(left, right)
 

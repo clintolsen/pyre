@@ -110,5 +110,35 @@ class TestCaptureGroups(RegexTestCase):
         self.assertEqual(result[0], [(0, 1)])
 
 
+    def test_difference_drops_negated_captures(self):
+        """Groups in the subtracted operand of r - s never report spans."""
+        result = pyre.fullmatch("(a.)-(.b)", "ac")
+
+        self.assertEqual(result, {0: [(0, 2)], 1: [(0, 2)]})
+
+    def test_nested_difference_drops_negated_captures(self):
+        """A nested difference keeps outer and left groups only."""
+        result = pyre.fullmatch("x((a.)-(.b))", "xac")
+
+        self.assertEqual(result, {0: [(0, 3)], 1: [(1, 3)], 2: [(1, 3)]})
+
+    def test_complement_drops_captures(self):
+        """Groups inside ~r describe non-matching strings and never report."""
+        result = pyre.fullmatch("~((a)c)", "ab")
+
+        self.assertEqual(result, {0: [(0, 2)]})
+
+    def test_complement_drops_nullable_prefix_captures(self):
+        """Markers reached through a nullable prefix under ~r never report."""
+        result = pyre.fullmatch("~((x*)a)", "ab")
+
+        self.assertEqual(result, {0: [(0, 2)]})
+
+    def test_difference_drops_negated_captures_after_any(self):
+        """Negated groups stay dropped when the left side is .*"""
+        result = pyre.fullmatch(".*-x(a*)(b)", "xac")
+
+        self.assertEqual(result, {0: [(0, 3)]})
+
 if __name__ == "__main__":
     unittest.main()
