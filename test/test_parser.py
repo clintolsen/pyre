@@ -44,10 +44,38 @@ class TestPrecedence(unittest.TestCase):
         self.assertIs(pyre.parse('a~b'), rx.RegexConcat(a, rx.RegexNot(b)))
         self.assertIs(pyre.parse('~a|b'), rx.RegexOr(rx.RegexNot(a), b))
 
+    def test_non_capturing_group_only_groups(self):
+        self.assertIs(pyre.parse('(?:ab)c'), pyre.parse('abc'))
+        self.assertIs(pyre.parse('(?:a)*'), pyre.parse('a*'))
+
     def test_minus_is_literal_at_start_of_operand(self):
         self.assertIs(pyre.parse('-a'), rx.RegexConcat(minus, a))
         self.assertIs(pyre.parse('a|-b'), rx.RegexOr(a, rx.RegexConcat(minus, b)))
         self.assertIs(pyre.parse('a--b'), rx.RegexDiff(a, rx.RegexConcat(minus, b)))
+
+
+class TestPrinting(unittest.TestCase):
+    def test_parentheses_follow_the_tree(self):
+        for pattern, printed in [
+            ('a-(?:b-c)', 'a - (b - c)'),
+            ('(?:a-b)-c', 'a - b - c'),
+            ('~(?:ab)', '~(a·b)'),
+            ('~ab', '~a·b'),
+            ('(?:~a)*', '(~a)*'),
+            ('~a*', '~a*'),
+            ('(?:ab)*', '(a·b)*'),
+        ]:
+            with self.subTest(pattern=pattern):
+                self.assertEqual(str(pyre.parse(pattern)), printed)
+
+    def test_printed_form_reparses_to_the_same_language(self):
+        # | and & may print their operands in either order, so compare
+        # languages rather than text
+        for pattern in ['(?:a|b)c', 'a(?:b|c)', 'a-(?:b|c)', '(?:a|b)&c',
+                        'a&(?:b|c)', 'a^(?:b-c)', '~(?:a|b)c', '(?:a-b)|c']:
+            with self.subTest(pattern=pattern):
+                printed = str(pyre.parse(pattern)).replace('·', '')
+                self.assertTrue(pyre.equal(printed, pattern), printed)
 
 
 class TestWhitespace(unittest.TestCase):

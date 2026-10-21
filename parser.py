@@ -255,8 +255,7 @@ class _Parser:
 
             if ch == ':':
                 self._advance()
-                body = self._group_body(start)
-                return regex.RegexExpr(body)
+                return self._group_body(start)
 
             if ch == 'P':
                 self._advance()
@@ -275,8 +274,7 @@ class _Parser:
         open_ = regex.RegexMarker(events=(event.Event(event.OPEN, gid, name),))
         close = regex.RegexMarker(events=(event.Event(event.CLOSE, gid),))
 
-        return regex.RegexConcat(
-            regex.RegexConcat(open_, regex.RegexExpr(body)), close)
+        return regex.RegexConcat(regex.RegexConcat(open_, body), close)
 
     def _group_body(self, start):
         if self._peek() == ')':

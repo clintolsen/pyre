@@ -46,7 +46,6 @@ class Regex:
             self.isstar = False
             self.isplus = False
             self.isopt = False
-            self.isexpr = False
             self.isdot = False
             self.isany = False
             self.isnot = False
@@ -177,31 +176,42 @@ class Regex:
 
         return rep
 
-    # Rank precedence values for each tree type
+    # Rank precedence values for each tree type, matching the parser
     #
     PRECEDENCE = {
         'RegexOr': 1,
         'RegexDiff': 1,
         'RegexXor': 1,
         'RegexAnd': 2,
-        'RegexNot': 4,
         'RegexConcat': 5,
-        'RegexStar': 6,
-        'RegexPlus': 6,
-        'RegexOpt': 6,
-        'RegexExpr': 7
+        'RegexNot': 6,
+        'RegexStar': 7,
+        'RegexPlus': 7,
+        'RegexOpt': 7,
     }
 
-    def paren(self, child):
-        ''' Emit parens if the parent is higher precedence '''
+    # Operators where (a op b) op c and a op (b op c) are the same
+    #
+    ASSOCIATIVE = {'RegexOr', 'RegexAnd', 'RegexXor', 'RegexConcat'}
+
+    def paren(self, child, right=False):
+        '''
+        Emit parens if the child binds more loosely than the parent. Binary
+        operators group left to right, so a right operand at the same level
+        needs them too, unless it is the same associative operator.
+        '''
         self_class = self.__class__.__name__
         child_class = child.__class__.__name__
 
         try:
-            if Regex.PRECEDENCE[self_class] > Regex.PRECEDENCE[child_class]:
-                return '(%s)' % child
+            mine = Regex.PRECEDENCE[self_class]
+            theirs = Regex.PRECEDENCE[child_class]
         except KeyError:
-            pass
+            return '%s' % child
+
+        if theirs < mine or (right and theirs == mine and not (
+                child_class == self_class and self_class in Regex.ASSOCIATIVE)):
+            return '(%s)' % child
 
         return '%s' % child
 
@@ -450,7 +460,7 @@ class RegexOr(Regex):
         return RegexOr(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
-        return f'{self.paren(self.left)} {RegexOr.sym} {self.paren(self.right)}'
+        return f'{self.paren(self.left)} {RegexOr.sym} {self.paren(self.right, right=True)}'
 
 
 class RegexXor(Regex):
@@ -505,7 +515,7 @@ class RegexXor(Regex):
         return RegexXor(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
-        return f'{self.paren(self.left)} {RegexXor.sym} {self.paren(self.right)}'
+        return f'{self.paren(self.left)} {RegexXor.sym} {self.paren(self.right, right=True)}'
 
 
 class RegexAnd(Regex):
@@ -576,7 +586,7 @@ class RegexAnd(Regex):
         return RegexAnd(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
-        return f'{self.paren(self.left)} {RegexAnd.sym} {self.paren(self.right)}'
+        return f'{self.paren(self.left)} {RegexAnd.sym} {self.paren(self.right, right=True)}'
 
 
 class RegexStar(Regex):
@@ -763,7 +773,7 @@ class RegexConcat(Regex):
         return RegexOr(left, right)
 
     def __str__(self):
-        return f'{self.paren(self.left)}{RegexConcat.sym}{self.paren(self.right)}'
+        return f'{self.paren(self.left)}{RegexConcat.sym}{self.paren(self.right, right=True)}'
 
 
 class RegexDiff(Regex):
@@ -821,7 +831,7 @@ class RegexDiff(Regex):
         return RegexDiff(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
-        return f'{self.paren(self.left)} {RegexDiff.sym} {self.paren(self.right)}'
+        return f'{self.paren(self.left)} {RegexDiff.sym} {self.paren(self.right, right=True)}'
 
 
 class RegexNot(Regex):
@@ -865,50 +875,6 @@ class RegexNot(Regex):
 
     def __str__(self):
         return f'{RegexNot.sym}{self.paren(self.expr)}'
-
-
-class RegexExpr(Regex):
-    '''
-    Sub-expression denoted by parenthesis: (RE)
-    '''
-    sym = '()'
-
-    def __new__(cls, expr, **kwargs):
-        # ((r)) = (r)
-        #
-        if expr.isexpr:
-            return expr.expr
-
-        # (ε) = ε
-        #
-        if expr.isepsilon:
-            return expr
-
-        # (∅) = ∅
-        #
-        if expr.isempty:
-            return RegexEmpty()
-
-        key = (cls, expr, frozenset(kwargs.items()))
-
-        def init(self):
-            self.expr = expr
-            self.charset = self.expr.charset
-            self.isexpr = True
-
-        return cls._intern(key, init)
-
-    def nullable(self):
-        if self._nullable is None:
-            self._nullable = self.expr.nullable()
-
-        return self._nullable
-
-    def _derive(self, ch):
-        return RegexExpr(self.expr.derive(ch))
-
-    def __str__(self):
-        return f'({self.expr})'
 
 
 class RegexMarker(Regex):

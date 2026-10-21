@@ -116,7 +116,7 @@ def _nullable_markers(e):
             return None
         return left + right
 
-    if isinstance(e, (rx.RegexPlus, rx.RegexExpr)):
+    if isinstance(e, rx.RegexPlus):
         return nullable_markers(e.expr)
 
     if isinstance(e, rx.RegexOpt):
@@ -187,7 +187,7 @@ def _derive_branches(e, ch):
         star = rx.RegexStar(e.expr)
         return [(m, rx.RegexConcat(t, star)) for m, t in derive_branches(e.expr, ch)]
 
-    if isinstance(e, (rx.RegexOpt, rx.RegexExpr)):
+    if isinstance(e, rx.RegexOpt):
         return derive_branches(e.expr, ch)
 
     if isinstance(e, rx.RegexAnd):
