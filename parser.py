@@ -70,6 +70,7 @@ class Parser:
         'NOTWORD',
         'EPSILON',
         'ESCAPED',
+        'CLASS_SET',
         'ID'
     )
 
@@ -254,11 +255,37 @@ class Parser:
         self.ID_scan = []
         return t
 
-    t_class_ignore = ' \t'
+    # Whitespace is significant inside a character class, as in Python's
+    # re.X, so [ ] matches a space.
+    #
+    t_class_ignore = ''
 
     def t_class_error(self, t):
         LOG.error("Illegal character '%s' in class at %d", t.value[0], t.lexpos)
         t.lexer.skip(1)
+
+    def t_class_ESCAPED(self, t):
+        r'\\.'
+
+        self.ID_scan.append(t.value)
+
+        if t.value in Parser._CLASS_SETS:
+            # \d, \w, \s and their negations add a whole set of characters
+            #
+            mask, negate = Parser._CLASS_SETS[t.value]
+            t.type = 'CLASS_SET'
+            t.value = TokenValue(t)
+            t.value.value = (regex.CHARSET_MAX - 1) ^ mask if negate else mask
+        else:
+            # Control escapes such as \t become that character; any other
+            # escaped character, such as \] or \-, is taken literally
+            #
+            ch = Parser._CONTROL_ESCAPES.get(t.value, t.value[1])
+            t.type = 'ID'
+            t.value = TokenValue(t)
+            t.value.value = ch
+
+        return t
 
     def t_class_MINUS(self, t):
         r'-'
@@ -514,6 +541,11 @@ class Parser:
         'range : ID'
         p[0] = [(p[1].value, p[1].kwds)]
 
+    def p_range_set(self, p):
+        'range : CLASS_SET'
+        mask = p[1].value
+        p[0] = [(chr(code), p[1].kwds) for code in range(256) if mask >> code & 1]
+
     def p_range_span(self, p):
         'range : ID MINUS ID'
         p[0] = []
@@ -541,23 +573,30 @@ class Parser:
         'literal : MINUS'
         p[0] = regex.RegexSym(p[1].value, **p[1].kwds)
 
+    _CONTROL_ESCAPES = {
+        '\\a': '\a',
+        '\\b': '\b',
+        '\\t': '\t',
+        '\\n': '\n',
+        '\\v': '\v',
+        '\\f': '\f',
+        '\\r': '\r',
+    }
+
+    _CLASS_SETS = {
+        '\\d': (_DIGIT_MASK, False),
+        '\\D': (_DIGIT_MASK, True),
+        '\\w': (_WORD_MASK, False),
+        '\\W': (_WORD_MASK, True),
+        '\\s': (_SPACE_MASK, False),
+        '\\S': (_SPACE_MASK, True),
+    }
+
     def p_literal_escaped(self, p):
         'literal : ESCAPED'
 
-        ctrl = {
-            '\\a': '\a',
-            '\\b': '\b',
-            '\\t': '\t',
-            '\\n': '\n',
-            '\\v': '\v',
-            '\\f': '\f',
-            '\\r': '\r',
-        }
-
-        if p[1].value in ctrl:
-            p[0] = regex.RegexSym(ctrl[p[1].value], **p[1].kwds)
-        else:
-            p[0] = regex.RegexSym(p[1].value[1], **p[1].kwds)
+        ch = Parser._CONTROL_ESCAPES.get(p[1].value, p[1].value[1])
+        p[0] = regex.RegexSym(ch, **p[1].kwds)
 
     def p_literal_epsilon(self, p):
         'literal : EPSILON'

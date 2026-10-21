@@ -9,6 +9,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from test_common import RegexTestCase
+import pyre
 
 class TestLiterals(RegexTestCase):
     def test_single_literal(self):
@@ -70,6 +71,49 @@ class TestCharacterClasses(RegexTestCase):
         pat = "[a-z]"
         self.assert_fullmatch_same_as_re(pat, "m")
         self.assert_fullmatch_same_as_re(pat, "A")
+
+    # Pyre treats every pattern as verbose, so the tests below compare against
+    # re.X. Inside a class, whitespace is significant and escapes work as in
+    # Python.
+    #
+    def assert_class_same_as_re_x(self, pattern, texts):
+        import re
+
+        for text in texts:
+            with self.subTest(pattern=pattern, text=text):
+                self.assertEqual(
+                    bool(pyre.fullmatch(pattern, text)),
+                    re.fullmatch(pattern, text, re.X) is not None,
+                )
+
+    def test_whitespace_is_significant_in_class(self):
+        self.assert_class_same_as_re_x("a[ ]b", ["a b", "ab"])
+        self.assert_class_same_as_re_x("[a b]", [" ", "a", "b", "c"])
+        self.assert_class_same_as_re_x("[#]", ["#"])
+
+    def test_escaped_literals_in_class(self):
+        self.assert_class_same_as_re_x(r"a[\ ]b", ["a b", "a\\b"])
+        self.assert_class_same_as_re_x(r"[\]]", ["]", "\\"])
+        self.assert_class_same_as_re_x(r"[\[]", ["["])
+        self.assert_class_same_as_re_x(r"[\\]", ["\\", "x"])
+        self.assert_class_same_as_re_x(r"[\^a]", ["^", "a", "b"])
+        self.assert_class_same_as_re_x(r"[a\-z]", ["-", "a", "z", "b"])
+
+    def test_control_escapes_in_class(self):
+        self.assert_class_same_as_re_x(r"[\t]", ["\t", "t", "\\"])
+        self.assert_class_same_as_re_x(r"[\t-\r]+", ["\t\n\r", "\v\f", " "])
+
+    def test_shorthand_sets_in_class(self):
+        self.assert_class_same_as_re_x(r"[\d.]+", ["1.5", "12", "1,5"])
+        self.assert_class_same_as_re_x(r"[\w-]+", ["a-b", "a_b", "a b"])
+        self.assert_class_same_as_re_x(r"[\s]", [" ", "\t", "a"])
+        self.assert_class_same_as_re_x(r"[\D]", ["x", "5"])
+        self.assert_class_same_as_re_x(r"[\W]", ["-", "a"])
+        self.assert_class_same_as_re_x(r"[\S]+", ["ab", "a b"])
+
+    def test_negated_class_with_shorthand(self):
+        self.assert_class_same_as_re_x(r"[^\d]", ["a", "5"])
+        self.assert_class_same_as_re_x(r"[^\s\d]+", ["ab", "a b", "a1"])
 
 
 class TestGroupsAndConcat(RegexTestCase):

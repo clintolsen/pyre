@@ -159,9 +159,9 @@ Without complement, you'd have to use something like:
 
 That has some serious `¯_(ツ)_/¯` vibes.
 
-Use `\ ` (backslash-space) to match a literal space, or `\s` for any whitespace
-character. Character classes also ignore whitespace and do not support escapes,
-so `[ ]` and `[\ ]` cannot match a space.
+Use `\ ` (backslash-space) or `[ ]` to match a literal space, or `\s` for any
+whitespace character. As in Python's `re.X`, whitespace inside a character class
+is significant, and escapes such as `\t`, `\]` and `\d` work there too.
 
 ---
 
