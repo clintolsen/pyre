@@ -37,6 +37,9 @@ class DFA:
         # branch priority.
         #
         self.expr = expr
+        if LOG.isEnabledFor(logging.DEBUG):
+            LOG.debug('Pattern:\n%s', expr.tree())
+
         self.group_numbers = capture.group_numbers(expr)
         self.states = set()
         self.initial = DFAState(expr._without_captures())
