@@ -47,7 +47,7 @@ class DFA:
     def __init__(self, expr):
         self.states = set()
         self.initial = DFAState(expr)
-        self.has_groups = capture.has_markers(expr)
+        self.group_numbers = capture.group_numbers(expr)
 
         todo = {self.initial}
 
@@ -201,10 +201,11 @@ class DFA:
         Capture groups for the DFA-confirmed match text[start:end], taken from
         the single highest-priority accepting path.
         """
-        if not self.has_groups:
+        if not self.group_numbers:
             return {0: [(start, end)]}
 
-        return capture.captures(self.initial.regex, text, start, end)
+        return capture.captures(self.initial.regex, text, start, end,
+                                self.group_numbers)
 
     # Skip over known bad start characters
     #

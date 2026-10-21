@@ -236,10 +236,12 @@ are executable matchers, so compose expressions before compiling. Operators do
 not parse strings implicitly; helper functions such as `pyre.equal()` and
 `pyre.isempty()` accept strings as a convenience.
 
-Set-operator composition is also language-level. If capture groups matter,
-parse one complete pattern so group numbering comes from a single parser pass;
-composing separately parsed fragments intentionally drops capture markers from
-the operands.
+Composition keeps capture groups. Groups are numbered left to right when you
+compile, so `pyre.parse("(a)") | pyre.parse("(b)")` reports the same groups as
+`pyre.parse("(a)|(b)")`. Groups report only from the part of a pattern that
+matched: the excluded side of `-`, the whole of `~`, and the losing side of
+`^` never report. `pyre.equal()` and `pyre.subset()` ignore groups and compare
+languages only.
 
 ---
 

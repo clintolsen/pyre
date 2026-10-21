@@ -211,14 +211,67 @@ class TestBooleanOps(RegexTestCase):
         with self.assertRaises(TypeError):
             "b" | expr
 
-    def test_set_operator_composition_is_language_level(self):
+    def test_set_operator_composition_keeps_captures(self):
+        """Composed patterns report groups exactly like one combined parse."""
         composed = pyre.compile(pyre.parse("(a)") | pyre.parse("(b)"))
         parsed_together = pyre.compile("(a)|(b)")
 
-        self.assertEqual(composed.fullmatch("a"), {0: [(0, 1)]})
-        self.assertEqual(composed.fullmatch("b"), {0: [(0, 1)]})
-        self.assertEqual(parsed_together.fullmatch("a"), {1: [(0, 1)], 0: [(0, 1)]})
-        self.assertEqual(parsed_together.fullmatch("b"), {2: [(0, 1)], 0: [(0, 1)]})
+        for s in ("a", "b"):
+            self.assertEqual(composed.fullmatch(s), parsed_together.fullmatch(s))
+
+        self.assertEqual(composed.fullmatch("b"), {2: [(0, 1)], 0: [(0, 1)]})
+
+    def test_composition_matches_single_parse_for_every_operator(self):
+        """Each set operator numbers and reports groups like the combined text."""
+        import operator
+
+        left, right = "(a.)", "(.b)"
+        ops = [("|", operator.or_), ("&", operator.and_),
+               ("-", operator.sub), ("^", operator.xor)]
+
+        for sym, fn in ops:
+            composed = pyre.compile(fn(pyre.parse(left), pyre.parse(right)))
+            together = pyre.compile(left + sym + right)
+            for s in ("ab", "ac", "cb"):
+                with self.subTest(op=sym, text=s):
+                    self.assertEqual(composed.fullmatch(s), together.fullmatch(s))
+
+        composed = pyre.compile(~pyre.parse("(a)c"))
+        self.assertEqual(composed.fullmatch("ab"), pyre.fullmatch("~((a)c)", "ab"))
+
+    def test_group_numbers_start_at_one_for_every_pattern(self):
+        """Earlier parses do not shift a pattern's public group numbers."""
+        for _ in range(5):
+            pyre.parse("(x)(y)(z)")
+
+        self.assertEqual(pyre.fullmatch("(a)(b)", "ab"),
+                         {0: [(0, 2)], 1: [(0, 1)], 2: [(1, 2)]})
+
+    def test_composition_keeps_group_names(self):
+        """Named groups survive composition under their own names."""
+        composed = pyre.parse("(?P<KW>if)") | pyre.parse("(?P<ID>[a-z]+)")
+
+        self.assertEqual(pyre.fullmatch(composed, "if"),
+                         {0: [(0, 2)], 1: [(0, 2)], "KW": [(0, 2)]})
+        self.assertEqual([t[0] for t in pyre.compile(composed).lex("if")], ["KW"])
+
+    def test_language_helpers_ignore_captures(self):
+        """equal() and subset() compare languages, not groups."""
+        self.assertTrue(pyre.equal(pyre.parse("(a)|(b)"), pyre.parse("a|b")))
+        self.assertTrue(pyre.subset(pyre.parse("(a)"), pyre.parse("(b)|(a)")))
+
+    @unittest.expectedFailure
+    def test_composition_order_is_kept_for_reversed_operands(self):
+        """
+        Known issue: RegexOr is interned as a commutative set, so once a | b
+        exists, b | a returns the same node with a still on the left. Group
+        numbering and branch priority then follow the first order built.
+        """
+        a = pyre.parse("(a)")
+        b = pyre.parse("(b)")
+        pyre.compile(a | b)
+
+        self.assertEqual(pyre.fullmatch(b | a, "a"), pyre.fullmatch("(b)|(a)", "a"))
 
     def test_isempty_helper(self):
         self.assertTrue(pyre.isempty("a & b"))

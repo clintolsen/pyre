@@ -4,8 +4,16 @@ from . import regex
 
 from . import event
 
+import itertools
 import logging
 LOG = logging.getLogger(__file__)
+
+# Internal group ids come from one process-wide counter, so groups in
+# separately parsed patterns never collide when the patterns are composed.
+# They are not the numbers users see: compiling renumbers groups 1, 2, 3...
+# in left-to-right order. Group 0 is reserved for the whole match.
+#
+_group_ids = itertools.count(1)
 
 class TokenValue:
     def __init__(self, token, **kwds):
@@ -28,7 +36,6 @@ class Parser:
         self.lexer.groups = [0]
         self.lexer.events = []
         self.lexer.line_start = 0
-        self.lexer.group_count = 1
         self.errors = 0
 
     def parse(self, *args, **kwargs):
@@ -182,11 +189,11 @@ class Parser:
                 > \s*               # '>'
               )
         '''
-        self.lexer.events.append(event.Event(event.OPEN, self.lexer.group_count,
+        gid = next(_group_ids)
+        self.lexer.events.append(event.Event(event.OPEN, gid,
             t.lexer.lexmatch.group('name')))
         t.value = TokenValue(t)
-        self.lexer.groups.append(self.lexer.group_count)
-        self.lexer.group_count += 1
+        self.lexer.groups.append(gid)
         return t
 
     def t_LPAREN_NOCAPTURE(self, t):
@@ -197,10 +204,10 @@ class Parser:
 
     def t_LPAREN(self, t):
         r'\('
-        self.lexer.events.append(event.Event(event.OPEN, self.lexer.group_count))
+        gid = next(_group_ids)
+        self.lexer.events.append(event.Event(event.OPEN, gid))
         t.value = TokenValue(t)
-        self.lexer.groups.append(self.lexer.group_count)
-        self.lexer.group_count += 1
+        self.lexer.groups.append(gid)
         return t
 
     def t_RPAREN(self, t):

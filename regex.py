@@ -74,60 +74,69 @@ class Regex:
 
         return self._prefix_markers
 
-    def _language(self):
+    # Return a copy with every capture marker replaced by ε. Markers are
+    # zero-width, so the language is unchanged.
+    #
+    # Set operators keep markers, so composed patterns report the groups of
+    # whichever operand matched. pyre.equal() and pyre.subset() strip them
+    # first purely as an optimization: markers make otherwise identical terms
+    # distinct, which adds DFA states and defeats the r ^ r = ∅ shortcut for
+    # separately parsed copies of one pattern.
+    #
+    def _without_captures(self):
         if self.ismarker:
             return RegexEpsilon()
         if hasattr(self, 'left') and hasattr(self, 'right'):
             return self.__class__(
-                self.left._language(),
-                self.right._language(),
+                self.left._without_captures(),
+                self.right._without_captures(),
             )
         if hasattr(self, 'expr'):
-            return self.__class__(self.expr._language())
+            return self.__class__(self.expr._without_captures())
         return self
 
     def __or__(self, other):
         if not isinstance(other, Regex):
             return NotImplemented
-        return RegexOr(self._language(), other._language())
+        return RegexOr(self, other)
 
     def __ror__(self, other):
         if not isinstance(other, Regex):
             return NotImplemented
-        return RegexOr(other._language(), self._language())
+        return RegexOr(other, self)
 
     def __and__(self, other):
         if not isinstance(other, Regex):
             return NotImplemented
-        return RegexAnd(self._language(), other._language())
+        return RegexAnd(self, other)
 
     def __rand__(self, other):
         if not isinstance(other, Regex):
             return NotImplemented
-        return RegexAnd(other._language(), self._language())
+        return RegexAnd(other, self)
 
     def __xor__(self, other):
         if not isinstance(other, Regex):
             return NotImplemented
-        return RegexXor(self._language(), other._language())
+        return RegexXor(self, other)
 
     def __rxor__(self, other):
         if not isinstance(other, Regex):
             return NotImplemented
-        return RegexXor(other._language(), self._language())
+        return RegexXor(other, self)
 
     def __sub__(self, other):
         if not isinstance(other, Regex):
             return NotImplemented
-        return RegexDiff(self._language(), other._language())
+        return RegexDiff(self, other)
 
     def __rsub__(self, other):
         if not isinstance(other, Regex):
             return NotImplemented
-        return RegexDiff(other._language(), self._language())
+        return RegexDiff(other, self)
 
     def __invert__(self):
-        return RegexNot(self._language())
+        return RegexNot(self)
 
     # Allow for use in boolean contexts. If we're not empty, then we are True.
     #

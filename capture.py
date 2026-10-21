@@ -25,25 +25,41 @@ from . import regex as rx
 
 _derive_branches_cache = {}
 _nullable_markers_cache = {}
-_has_markers_cache = {}
 
 _NOT_NULLABLE = object()
 
 
-def has_markers(expr):
-    """True if any capture marker appears anywhere in expr."""
-    try:
-        return _has_markers_cache[expr]
-    except KeyError:
-        pass
+def group_numbers(expr):
+    """
+    Map each internal group id in expr to the number users see.
 
-    if expr.ismarker:
-        result = True
-    else:
-        result = any(has_markers(child) for child in _children(expr))
+    The parser draws group ids from a process-wide counter so separately
+    parsed patterns never collide. Here they are renumbered 1, 2, 3... in
+    the order their opening markers appear, left to right. A composed
+    pattern such as parse("(a)") | parse("(b)") therefore numbers its
+    groups exactly like parse("(a)|(b)").
+    """
+    numbers = {}
+    visited = set()
+    stack = [expr]
 
-    _has_markers_cache[expr] = result
-    return result
+    while stack:
+        node = stack.pop()
+        if node in visited:
+            continue
+        visited.add(node)
+
+        if node.ismarker:
+            for ev in node.events:
+                if ev.kind == event.OPEN and ev.gid not in numbers:
+                    numbers[ev.gid] = len(numbers) + 1
+            continue
+
+        # Push right first so the left child is visited first.
+        #
+        stack.extend(reversed(_children(node)))
+
+    return numbers
 
 
 def _children(expr):
@@ -222,19 +238,28 @@ class _Caps:
 
         return _Caps(spans, opened, names)
 
-    def finalize(self, start, end):
-        out = {gid: [span] for gid, span in self.spans.items()}
+    def finalize(self, start, end, numbers):
+        """
+        Build the result dict, translating internal group ids to the
+        public numbers from group_numbers().
+        """
+        out = {numbers[gid]: [span] for gid, span in self.spans.items()}
         out[0] = [(start, end)]
 
-        named = {name: out[gid] for gid, name in self.names.items() if gid in out}
+        named = {
+            name: [self.spans[gid]]
+            for gid, name in self.names.items()
+            if gid in self.spans
+        }
 
         return {**named, **out}
 
 
-def captures(expr, text, start, end):
+def captures(expr, text, start, end, numbers):
     """
     Capture groups for text[start:end] fully matching expr, taken from the
     highest-priority accepting path. Returns {} if there is no such path.
+    numbers is the mapping from group_numbers(expr).
     """
     threads = [(expr, _Caps())]
 
@@ -257,6 +282,6 @@ def captures(expr, text, start, end):
     for term, caps in threads:
         tail = nullable_markers(term)
         if tail is not None:
-            return caps.apply(tail, end).finalize(start, end)
+            return caps.apply(tail, end).finalize(start, end, numbers)
 
     return {}

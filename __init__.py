@@ -55,11 +55,14 @@ def search(pattern: Pattern, string: str, *, all: bool = False, **kwargs) -> Mat
 def isempty(pattern: Pattern) -> bool:
     return compile(pattern).isempty()
 
+def _without_captures(pattern: Pattern) -> Regex:
+    return _to_regex(pattern)._without_captures()
+
 def equal(a: Pattern, b: Pattern) -> bool:
-    return _compile_dfa(_to_regex(a) ^ _to_regex(b)).isempty()
+    return _compile_dfa(_without_captures(a) ^ _without_captures(b)).isempty()
 
 def subset(a: Pattern, b: Pattern) -> bool:
-    return _compile_dfa(_to_regex(a) - _to_regex(b)).isempty()
+    return _compile_dfa(_without_captures(a) - _without_captures(b)).isempty()
 
 __all__ = [
     'parse',
