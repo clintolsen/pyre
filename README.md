@@ -14,15 +14,18 @@ the DFA directly from the expression by repeatedly applying derivative rules.
 This also allows novel set operations like language complement (NOT) `~`,
 intersection (AND) `&`, symmetric difference (XOR) `^`, and difference `-` in an
 efficient manner. Because matching is performed on the resulting DFA, the
-recognizer runs in linear time and does not require backtracking.
+recognizer runs in linear time and does not require backtracking. Capture groups
+come from a second pass over the matched text that follows the pattern's partial
+derivatives in Pike VM style, so it never backtracks either.
 
 The project includes:
 
 - A lexer and parser written in PLY
 - A full AST of regular-expression operators
 - DFA construction using derivatives
-- Capture-group support
-- `match()` and `search()` APIs
+- Capture groups, including named groups
+- `match()`, `fullmatch()` and `search()` APIs, plus a `lex()` method on compiled patterns
+- Set operators on parsed patterns, and `equal()`, `subset()` and `isempty()` language checks
 - Verbose patterns ala Python `re.X` with inline comments `#` allowed
 - An example calculator app using lexer feature
 - A command-line interface called `pyre`
@@ -58,7 +61,7 @@ The project includes:
 
 ## Installation
 
-Requires **Python 3.8+** and **PLY**.
+Requires **Python 3.10+** and **PLY**.
 
 ### Installing PLY
 
@@ -145,16 +148,20 @@ pyre '/\*         # Comment start
         .*        # Any suffix
       )           # End complement
       \*/         # Comment end' \
-    `<file`>
+    <file>
 ```
 
 Without complement, you'd have to use something like:
 
-`'/\* ( [^*] | \*+ [^/] )* \*/'`
+`'/\* ( [^*] | \*+ [^*/] )* \*+ /'`
+
+`pyre.equal()` confirms the two patterns match exactly the same comments.
 
 That has some serious `¯_(ツ)_/¯` vibes.
 
-Use `\s` (backslash-space) or a character class to match a literal space.
+Use `\ ` (backslash-space) to match a literal space, or `\s` for any whitespace
+character. Character classes also ignore whitespace and do not support escapes,
+so `[ ]` and `[\ ]` cannot match a space.
 
 ---
 
@@ -251,6 +258,7 @@ languages only.
  ├── .gitignore
  ├── README.md
  ├── __init__.py
+ ├── capture.py
  ├── cli.py
  ├── dfa.py
  ├── event.py
