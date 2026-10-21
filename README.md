@@ -47,6 +47,12 @@ The project includes:
 5. **Janusz A. Brzozowski (1964)**
   *Derivatives of Regular Expressions*
    Journal of the ACM 11: 481–494
+6. **Partial Derivatives of Regular Expressions and Finite Automaton Constructions**
+  Valentin Antimirov
+   *Theoretical Computer Science*, Vol 155 Issue 2, 1996, pp. 291–319
+7. **Regular Expression Matching: the Virtual Machine Approach**
+  Russ Cox
+   [https://swtch.com/~rsc/regexp/regexp2.html](https://swtch.com/~rsc/regexp/regexp2.html)
 
 ---
 

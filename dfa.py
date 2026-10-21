@@ -7,8 +7,7 @@ LOG = logging.getLogger(__file__)
 
 from . import util
 from . import regex
-from . import event
-from .event import Event
+from . import capture
 
 from collections import namedtuple
 DFAStep = namedtuple("DFAStep", "index char prev_state state goto")
@@ -48,6 +47,7 @@ class DFA:
     def __init__(self, expr):
         self.states = set()
         self.initial = DFAState(expr)
+        self.has_groups = capture.has_markers(expr)
 
         todo = {self.initial}
 
@@ -147,8 +147,6 @@ class DFA:
                 {group_id: [(start, end), ...]}
             where start/end are 0-based indices into `text`, end-exclusive.
         """
-        group_info = GroupInfo()
-
         LOG.debug(f'Match: {self.initial} against {text}')
 
         state = self.initial
@@ -162,19 +160,10 @@ class DFA:
             if state.regex.isempty:
                 return {}
 
-            # Track capture groups
-            group_info.step(step.index, step.goto.events)
-
         if not state.regex.isnullable():
             return {}
 
-        end_index = len(text)
-
-        # Finalize match span [0, end_index) and guarantee group 0 exists
-        #
-        finalized = group_info.finalize(0, end_index)
-
-        return finalized
+        return self._groups(text, 0, len(text))
 
 
     def match(self, text, *, greedy=True):
@@ -184,13 +173,12 @@ class DFA:
 
     def _run_from(self, text, offset, *, greedy=True):
         """
-        Single pass: run DFA from offset, collect capture groups, track match end.
-        Stops when we hit empty state. Match end is the latest nullable index.
+        Run the DFA from offset to find the match end, then extract capture
+        groups for that span. Stops when we hit the empty state. Match end is
+        the latest nullable index.
         Returns (end_index, groups); (None, {}) if no match.
         """
-        group_info = GroupInfo()
         last_index = None
-        last_state = None
 
         for step in self.run(text, index=offset):
             state = step.state
@@ -198,22 +186,25 @@ class DFA:
             if state.regex.isempty:
                 break
 
-            group_info.step(step.index, step.goto.events)
-
             if state.regex.isnullable():
                 last_index = step.index + 1
-                last_state = state
                 if not greedy:
                     break
 
         if last_index is None:
             return None, {}
 
-        close_events = {e for e in last_state.prefix_events if e.kind == event.CLOSE}
-        if close_events:
-            group_info.step(last_index, close_events)
+        return last_index, self._groups(text, offset, last_index)
 
-        return last_index, group_info.finalize(offset, last_index)
+    def _groups(self, text, start, end):
+        """
+        Capture groups for the DFA-confirmed match text[start:end], taken from
+        the single highest-priority accepting path.
+        """
+        if not self.has_groups:
+            return {0: [(start, end)]}
+
+        return capture.captures(self.initial.regex, text, start, end)
 
     # Skip over known bad start characters
     #
@@ -339,71 +330,3 @@ class DFAState:
 def compile(expr):
     ''' Construct a DFA from a regular expression '''
     return DFA(expr)
-
-class GroupInfo:
-    """
-    Tracks capture groups based on the set of active groups from each DFA step.
-    """
-    def __init__(self):
-        self.active = {}   # g -> start_index
-        self.final  = {}   # g -> [(start, end), ...]
-        self.names  = {}   # g -> name (str)
-
-    def step(self, index: int, events: set[Event]):
-        """
-        index  = current character index in the input (same `index` you log in DFAStep)
-        events = set of Event(...) from the transition (goto.events)
-        """
-        if not events:
-            return
-
-        closes = [e for e in events if e.kind == event.CLOSE]
-        opens  = [e for e in events if e.kind == event.OPEN]
-
-        # Handle close events first
-        #
-        for e in closes:
-            gid = e.gid
-            if gid in self.active:
-                start = self.active[gid]
-                self.final[gid] = [(start, index)]
-                del self.active[gid]
-
-        for e in opens:
-            # Named groups
-            #
-            if e.name:
-                self.names[e.gid] = e.name
-
-            gid = e.gid
-            # If you can get nested or repeated OPEN without CLOSE, decide policy.
-            # For now: overwrite start (or ignore if already open).
-            #
-            self.active[gid] = index
-
-
-    def finalize(self, match_start: int, match_end: int):
-        out = {g: list(v) for g, v in self.final.items()}
-
-        # Close any still-active groups at end of match
-        #
-        for gid, start in self.active.items():
-            out[gid] = [(start, match_end)]
-
-        # Whole match
-        #
-        out.setdefault(0, []).append((match_start, match_end))
-
-        # Add named groups
-        #
-        named = {
-            name: out[gid]
-            for gid, name in self.names.items()
-            if gid in out
-        }
-
-        # Shouldn't collide
-        #
-        out = {**named, **out}
-
-        return out

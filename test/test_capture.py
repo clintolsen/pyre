@@ -140,6 +140,61 @@ class TestCaptureGroups(RegexTestCase):
 
         self.assertEqual(result, {0: [(0, 3)]})
 
+    def test_alternation_drops_dead_branch_captures(self):
+        """A branch that is alive mid-match but fails later reports nothing."""
+        self.assertEqual(pyre.fullmatch("(a)b|(a)c", "ac"),
+                         {0: [(0, 2)], 2: [(0, 1)]})
+        self.assertEqual(pyre.fullmatch("(ab)|a(c)", "ac"),
+                         {0: [(0, 2)], 2: [(1, 2)]})
+
+    def test_alternation_prefers_leftmost_branch(self):
+        """When both branches accept, only the leftmost reports captures."""
+        self.assertEqual(pyre.fullmatch("(a.)|(.b)", "ab"),
+                         {0: [(0, 2)], 1: [(0, 2)]})
+        self.assertEqual(pyre.fullmatch("(a.)|(.b)", "cb"),
+                         {0: [(0, 2)], 2: [(0, 2)]})
+
+    def test_alternation_with_search(self):
+        """Each search match reports only its own branch's group."""
+        result = pyre.search("(a)b|(a)c", "xxacxxab", all=True)
+
+        self.assertEqual(result, {0: [(2, 4), (6, 8)], 1: [(6, 7)], 2: [(2, 3)]})
+
+    def test_xor_reports_only_matching_side(self):
+        """r ^ s reports captures from whichever side matched."""
+        self.assertEqual(pyre.fullmatch("(a.)^(.b)", "ac"),
+                         {0: [(0, 2)], 1: [(0, 2)]})
+        self.assertEqual(pyre.fullmatch("(a.)^(.b)", "cb"),
+                         {0: [(0, 2)], 2: [(0, 2)]})
+
+    def test_intersection_keeps_both_sides(self):
+        """r & s matches the same span on both sides, so both report."""
+        self.assertEqual(pyre.fullmatch("(a.)&(.c)", "ac"),
+                         {0: [(0, 2)], 1: [(0, 2)], 2: [(0, 2)]})
+
+    def test_captures_agree_with_python_re(self):
+        """Path-consistent captures match Python's re where syntax overlaps."""
+        import re
+
+        cases = [
+            ("((a)|(b))*", "ab"),
+            ("(a*)(a*)", "aaa"),
+            ("(a|ab)(c|bcd)(d*)", "abcd"),
+            ("(x)?(xy)?", "xy"),
+            ("(a+)+", "aa"),
+            ("(?:(a)|b)*", "ab"),
+            ("(a)|b", "b"),
+        ]
+        for pattern, text in cases:
+            with self.subTest(pattern=pattern, text=text):
+                m = re.fullmatch(pattern, text)
+                expected = {0: [m.span()]}
+                for gid in range(1, m.re.groups + 1):
+                    if m.span(gid) != (-1, -1):
+                        expected[gid] = [m.span(gid)]
+
+                self.assertEqual(pyre.fullmatch(pattern, text), expected)
+
     def test_group_names_do_not_leak_between_patterns(self):
         """A group name belongs to its own pattern, not to a same-numbered group elsewhere."""
         pyre.compile("(?P<OTHER>x)")
@@ -147,6 +202,14 @@ class TestCaptureGroups(RegexTestCase):
 
         self.assertEqual(pyre.fullmatch("(?P<ID>a)", "a"),
                          {0: [(0, 1)], 1: [(0, 1)], "ID": [(0, 1)]})
+
+    def test_lex_rule_order_wins_on_ties(self):
+        """When two rules match the same token, the earlier rule wins."""
+        kw_first = pyre.compile("(?P<KW>if)|(?P<ID>[a-z]+)|(?P<WS>\\s+)")
+        id_first = pyre.compile("(?P<ID>[a-z]+)|(?P<KW>if)")
+
+        self.assertEqual([t[0] for t in kw_first.lex("if\tiff")], ["KW", "WS", "ID"])
+        self.assertEqual([t[0] for t in id_first.lex("if")], ["ID"])
 
 if __name__ == "__main__":
     unittest.main()
