@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 
 LOG = logging.getLogger(__name__)
@@ -264,6 +265,21 @@ class Regex:
         return out
 
     @staticmethod
+    def _subsumes(x, y):
+        '''
+        True if y is a suffix of the concatenation x and everything in x
+        before that suffix is nullable, so every string y matches x does too.
+        '''
+        if y.isepsilon:
+            return x.isnullable()
+
+        xs = x.args if isinstance(x, RegexConcat) else (x,)
+        ys = y.args if isinstance(y, RegexConcat) else (y,)
+        k = len(xs) - len(ys)
+
+        return k > 0 and xs[k:] == ys and all(p.isnullable() for p in xs[:k])
+
+    @staticmethod
     def get_args(expr, expr_type):
         '''
         The operands of expr as a flat list if it is an expr_type node, so
@@ -433,6 +449,17 @@ class RegexOr(Regex):
         if set(args_l) <= set(args_r):
             if not ordered or args_u == Regex.unique(args_r):
                 return right
+
+        # 6) s + p·s ≈ p·s when p is nullable, since then L(s) ⊆ L(p·s).
+        #    ε + r ≈ r when r is nullable is the case where s is empty.
+        #    Only without captures, where dropping an alternative cannot
+        #    change which one reports groups.
+        #
+        if not ordered:
+            kept = [y for y in args_u
+                    if not any(x is not y and Regex._subsumes(x, y) for x in args_u)]
+            if len(kept) < len(args_u):
+                return functools.reduce(RegexOr, kept)
 
         # 2) r + s ≈ s + r, unless captures make order matter
         #

@@ -142,5 +142,29 @@ class TestFloatingPoint(RegexTestCase):
         self.assert_fullmatch_same_as_re(pat, '+10')
         self.assert_fullmatch_same_as_re(pat, '1E10')
 
+class TestSimplification(RegexTestCase):
+    def test_alternative_after_nullable_prefix_is_dropped(self):
+        # b adds nothing to a*b, and ε adds nothing to a*
+        self.assertIs(pyre.parse("a*b|b"), pyre.parse("a*b"))
+        self.assertIs(pyre.parse("b|a?b"), pyre.parse("a?b"))
+        self.assertIs(pyre.parse("ε|a*"), pyre.parse("a*"))
+
+    def test_capturing_alternatives_are_kept(self):
+        # The first alternative wins, so b reports as group 1, as in re
+        self.assertEqual(pyre.fullmatch("(a*b)|(b)", "b"),
+                         {0: [(0, 1)], 1: [(0, 1)]})
+        self.assertEqual(pyre.fullmatch("(b)|(a*b)", "b"),
+                         {0: [(0, 1)], 1: [(0, 1)]})
+
+    def test_nested_stars_over_growing_classes_stay_small(self):
+        # The minimal DFA has one state per level plus the dead state.
+        # Without the rule above, eight levels built 627 states.
+        for n in (4, 8):
+            pat = "".join(f"(?:[a-{chr(97 + i)}]" for i in range(n)) + ")*" * n
+            with self.subTest(levels=n):
+                self.assertEqual(len(pyre.compile(pat).states), n + 1)
+                for s in ["", "a", "ab", "ba", "abcd"[:n], "b"]:
+                    self.assert_fullmatch_same_as_re(pat, s)
+
 if __name__ == "__main__":
     unittest.main()
