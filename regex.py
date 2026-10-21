@@ -255,26 +255,16 @@ class Regex:
 
     @staticmethod
     def get_args(expr, expr_type):
-        ''' Gather all the arguments for an expression reaching down to sub-expressions '''
-        args = []
-
-        # A long literal or alternation is a chain as deep as the pattern is
-        # long, so walk it with an explicit stack rather than recursion.
-        # Children are pushed in reverse so they come off in order.
-        #
-        stack = [expr]
-        while stack:
-            node = stack.pop()
-
-            if not isinstance(node, expr_type):
-                args.append(node)
-                continue
-
-            for attr in ('expr', 'right', 'left'):
-                if hasattr(node, attr):
-                    stack.append(getattr(node, attr))
-
-        return args
+        '''
+        The operands of expr as a flat list if it is an expr_type node, so
+        (a·b)·c gives [a, b, c]; otherwise [expr]. Each |, & and · node keeps
+        its flattened operands from when it was built, so nothing is walked.
+        Walking was quadratic for long chains, and exponential when an
+        alternation was rebuilt from overlapping alternations.
+        '''
+        if isinstance(expr, expr_type):
+            return list(expr.args)
+        return [expr]
 
 
 class RegexEmpty(Regex):
@@ -436,14 +426,16 @@ class RegexOr(Regex):
 
         # 2) r + s ≈ s + r, unless captures make order matter
         #
+        args = tuple(args_u)
         if ordered:
-            key = (cls, tuple(args_u), frozenset(kwargs.items()))
+            key = (cls, args, frozenset(kwargs.items()))
         else:
-            key = (cls, frozenset(args_u), frozenset(kwargs.items()))
+            key = (cls, frozenset(args), frozenset(kwargs.items()))
 
         def init(self):
             self.left = left
             self.right = right
+            self.args = args
             self.charset = self.left.charset & self.right.charset
 
         return cls._intern(key, init)
@@ -560,14 +552,16 @@ class RegexAnd(Regex):
             if not ordered or args_u == Regex.unique(args_r):
                 return right
 
+        args = tuple(args_u)
         if ordered:
-            key = (cls, tuple(args_u), frozenset(kwargs.items()))
+            key = (cls, args, frozenset(kwargs.items()))
         else:
-            key = (cls, frozenset(args_u), frozenset(kwargs.items()))
+            key = (cls, frozenset(args), frozenset(kwargs.items()))
 
         def init(self):
             self.left = left
             self.right = right
+            self.args = args
             self.charset = self.left.charset & self.right.charset
 
         return cls._intern(key, init)
@@ -739,12 +733,13 @@ class RegexConcat(Regex):
         if right.isepsilon:
             return left
 
-        args = [*Regex.get_args(left, RegexConcat), *Regex.get_args(right, RegexConcat)]
-        key = (cls, *args, frozenset(kwargs.items()))
+        args = (*Regex.get_args(left, RegexConcat), *Regex.get_args(right, RegexConcat))
+        key = (cls, args, frozenset(kwargs.items()))
 
         def init(self):
             self.left = left
             self.right = right
+            self.args = args
             if self.left.isnullable():
                 self.charset = self.left.charset & self.right.charset
             else:
