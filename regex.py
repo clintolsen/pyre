@@ -37,8 +37,6 @@ class Regex:
             self._nullable = None
             self.events = ()
 
-            self._prefix_markers = None
-
             self.isempty = False
             self.isepsilon = False
             self.ismarker = False
@@ -61,18 +59,12 @@ class Regex:
     def isnullable(self):
         return self.nullable().isepsilon
 
-    def derive(self, ch, states, negate_states=False):
+    def derive(self, ch):
         raise Exception('derive')
 
     __hash__ = object.__hash__
     def __eq__(self, other):
         return self is other
-
-    def prefix_markers(self):
-        if self._prefix_markers is None:
-            self._prefix_markers = set()
-
-        return self._prefix_markers
 
     # Return a copy with every capture marker replaced by ε. Markers are
     # zero-width, so the language is unchanged.
@@ -259,7 +251,7 @@ class RegexEmpty(Regex):
 
         return cls._intern(key, init)
 
-    def derive(self, ch, states, negate_states=False):
+    def derive(self, ch):
         return self
 
     def __str__(self):
@@ -288,7 +280,7 @@ class RegexEpsilon(Regex):
     def nullable(self):
         return self
 
-    def derive(self, ch, states, negate_states=False):
+    def derive(self, ch):
         return RegexEmpty()
 
     def __str__(self):
@@ -337,12 +329,9 @@ class RegexSym(Regex):
         return cls._intern(key, init)
 
 
-    def derive(self, ch, states, negate_states=False):
+    def derive(self, ch):
         bit = 1 << ord(ch)
         match = bool(self.mask & bit)
-
-        if match != negate_states:
-            states.add(self)
 
         if match:
             return RegexEpsilon()
@@ -407,25 +396,8 @@ class RegexOr(Regex):
 
         return self._nullable
 
-    def prefix_markers(self):
-        if self._prefix_markers is None:
-            self._prefix_markers = self.left.prefix_markers() | self.right.prefix_markers()
-
-        return self._prefix_markers
-
-    def derive(self, ch, states, negate_states=False):
-        lstates = set()
-        rstates = set()
-
-        left  = self.left.derive(ch, lstates, negate_states)
-        right = self.right.derive(ch, rstates, negate_states)
-
-        if not left.isempty:
-            states |= lstates
-        if not right.isempty:
-            states |= rstates
-
-        return RegexOr(left, right)
+    def derive(self, ch):
+        return RegexOr(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
         return f'{self.paren(self.left)} {RegexOr.sym} {self.paren(self.right)}'
@@ -473,14 +445,8 @@ class RegexXor(Regex):
 
         return self._nullable
 
-    def prefix_markers(self):
-        if self._prefix_markers is None:
-            self._prefix_markers = self.left.prefix_markers() | self.right.prefix_markers()
-
-        return self._prefix_markers
-
-    def derive(self, ch, states, negate_states=False):
-        return RegexXor(self.left.derive(ch, states, negate_states), self.right.derive(ch, states, negate_states))
+    def derive(self, ch):
+        return RegexXor(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
         return f'{self.paren(self.left)} {RegexXor.sym} {self.paren(self.right)}'
@@ -538,14 +504,8 @@ class RegexAnd(Regex):
 
         return self._nullable
 
-    def prefix_markers(self):
-        if self._prefix_markers is None:
-            self._prefix_markers = self.left.prefix_markers() | self.right.prefix_markers()
-
-        return self._prefix_markers
-
-    def derive(self, ch, states, negate_states=False):
-        return RegexAnd(self.left.derive(ch, states, negate_states), self.right.derive(ch, states, negate_states))
+    def derive(self, ch):
+        return RegexAnd(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
         return f'{self.paren(self.left)} {RegexAnd.sym} {self.paren(self.right)}'
@@ -585,14 +545,8 @@ class RegexStar(Regex):
     def nullable(self):
         return RegexEpsilon()
 
-    def prefix_markers(self):
-        if self._prefix_markers is None:
-            self._prefix_markers = self.expr.prefix_markers()
-
-        return self._prefix_markers
-
-    def derive(self, ch, states, negate_states=False):
-        return RegexConcat(self.expr.derive(ch, states, negate_states), self)
+    def derive(self, ch):
+        return RegexConcat(self.expr.derive(ch), self)
 
     def __str__(self):
         return f'{self.paren(self.expr)}{RegexStar.sym}'
@@ -625,14 +579,8 @@ class RegexPlus(Regex):
     def nullable(self):
         return self.expr.nullable()
 
-    def prefix_markers(self):
-        if self._prefix_markers is None:
-            self._prefix_markers = self.expr.prefix_markers()
-
-        return self._prefix_markers
-
-    def derive(self, ch, states, negate_states=False):
-        return RegexConcat(self.expr.derive(ch, states, negate_states), RegexStar(self.expr))
+    def derive(self, ch):
+        return RegexConcat(self.expr.derive(ch), RegexStar(self.expr))
 
     def __str__(self):
         return f'{self.paren(self.expr)}{RegexPlus.sym}'
@@ -659,14 +607,8 @@ class RegexOpt(Regex):
     def nullable(self):
         return RegexEpsilon()
 
-    def prefix_markers(self):
-        if self._prefix_markers is None:
-            self._prefix_markers = self.expr.prefix_markers()
-
-        return self._prefix_markers
-
-    def derive(self, ch, states, negate_states=False):
-        return self.expr.derive(ch, states, negate_states)
+    def derive(self, ch):
+        return self.expr.derive(ch)
 
     def __str__(self):
         return f'{self.paren(self.expr)}{RegexOpt.sym}'
@@ -690,9 +632,7 @@ class RegexDot(Regex):
 
         return cls._intern(key, init)
 
-    def derive(self, ch, states, negate_states=False):
-        if not negate_states:
-            states.add(self)
+    def derive(self, ch):
         return RegexEpsilon()
 
     def __str__(self):
@@ -743,60 +683,15 @@ class RegexConcat(Regex):
             self._nullable = RegexAnd(self.left.nullable(), self.right.nullable())
         return self._nullable
 
-    def derive(self, ch, states, negate_states=False):
-        if self.left.ismarker:
-            # Try the real derivative first
-            #
-            rstates = set()
-            result = self.right.derive(ch, rstates, negate_states)
+    def derive(self, ch):
+        left = RegexConcat(self.left.derive(ch), self.right)
 
-            # Only record the marker if this path succeeds
-            if not result.isempty:
-                # Markers under a negated operand belong to strings that
-                # must not match, so they never report captures.
-                #
-                if not negate_states:
-                    states.add(self.left)
-                states |= rstates
+        if not self.left.isnullable():
+            return left
 
-            return result
+        right = RegexConcat(self.left.nullable(), self.right.derive(ch))
 
-        lstates = set()
-        left = RegexConcat(self.left.derive(ch, lstates, negate_states), self.right)
-
-        # 1. We must be careful not to add any transition states that end up
-        # empty to our final state computation.
-        #
-        if not left.isempty:
-            states |= lstates
-
-        right = RegexEmpty()
-
-        if self.left.isnullable():
-            rstates = set()
-            right = RegexConcat(self.left.nullable(), self.right.derive(ch, rstates, negate_states=negate_states))
-
-            # 2. Same as 1.
-            #
-            if not right.isempty:
-                states |= rstates
-                if not negate_states:
-                    states |= self.left.prefix_markers()
-
-        result = RegexOr(left, right)
-
-        return result
-
-    def prefix_markers(self):
-        if self._prefix_markers is None:
-            out = set(self.left.prefix_markers())
-
-            if self.left.isnullable():
-                out |= self.right.prefix_markers()
-
-            self._prefix_markers = out
-
-        return self._prefix_markers
+        return RegexOr(left, right)
 
     def __str__(self):
         return f'{self.paren(self.left)}{RegexConcat.sym}{self.paren(self.right)}'
@@ -853,14 +748,8 @@ class RegexDiff(Regex):
 
         return self._nullable
 
-    def prefix_markers(self):
-        if self._prefix_markers is None:
-            self._prefix_markers = self.left.prefix_markers()
-
-        return self._prefix_markers
-
-    def derive(self, ch, states, negate_states=False):
-        return RegexDiff(self.left.derive(ch, states, negate_states), self.right.derive(ch, states, not negate_states))
+    def derive(self, ch):
+        return RegexDiff(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
         return f'{self.paren(self.left)} {RegexDiff.sym} {self.paren(self.right)}'
@@ -902,8 +791,8 @@ class RegexNot(Regex):
 
         return self._nullable
 
-    def derive(self, ch, states, negate_states=False):
-        return RegexNot(self.expr.derive(ch, states, not negate_states))
+    def derive(self, ch):
+        return RegexNot(self.expr.derive(ch))
 
     def __str__(self):
         return f'{RegexNot.sym}{self.paren(self.expr)}'
@@ -946,14 +835,8 @@ class RegexExpr(Regex):
 
         return self._nullable
 
-    def derive(self, ch, states, negate_states=False):
-        return RegexExpr(self.expr.derive(ch, states, negate_states))
-
-    def prefix_markers(self):
-        if self._prefix_markers is None:
-            self._prefix_markers = self.expr.prefix_markers()
-
-        return self._prefix_markers
+    def derive(self, ch):
+        return RegexExpr(self.expr.derive(ch))
 
     def __str__(self):
         return f'({self.expr})'
@@ -972,19 +855,15 @@ class RegexMarker(Regex):
             self.charset = CharSet(CHARSET_MAX - 1)
             self.events = events
             self.ismarker = True
-            self._prefix_markers = {self}
 
         return cls._intern(key, init)
 
     def nullable(self):
         return RegexEpsilon()
 
-    def derive(self, ch, states, negate_states=False):
+    def derive(self, ch):
         # Markers don't match characters
         return RegexEmpty()
-
-    def prefix_markers(self):
-        return self._prefix_markers
 
     def __str__(self):
         return RegexMarker.sym

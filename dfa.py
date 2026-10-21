@@ -12,32 +12,16 @@ from . import capture
 from collections import namedtuple
 DFAStep = namedtuple("DFAStep", "index char prev_state state goto")
 
-# Manage state transition information. In addition to keeping track of the next
-# state, we will also house info about which particular states were used to
-# compute the transition, generally a RegexDot or RegexSym.
+# A DFA transition: the state reached on a character. Capture groups are not
+# tracked here; a DFA state merges every live branch, so a transition cannot
+# say which branch crossed a marker. See capture.py.
 #
 class Goto:
-    def __init__(self, _next, _states=None):
+    def __init__(self, _next):
         self._next = _next
-        self._states = _states if _states is not None else set()
-        self._events = None
-
-    @property
-    def events(self):
-        if self._events is None:
-            _events = set()
-
-            for x in self._states:
-                if x.ismarker:
-                    for y in x.events:
-                        _events.add(y)
-
-            self._events = _events
-
-        return self._events
 
     def __str__(self):
-        return f'Goto(next={self._next.name} events={self.events})'
+        return f'Goto(next={self._next.name})'
 
     def __repr__(self):
         return f'{self}'
@@ -58,28 +42,18 @@ class DFA:
 
             LOG.debug(f'Current state {current.name}: {current}')
 
-            markers = current.regex.prefix_markers()
-            events = set()
-            for marker in markers:
-                events |= set(marker.events)
-
-            current.prefix_events = events
-
             classes = current.regex.charset.get_int_sets()
 
             for charset in classes:
                 if charset:
                     char = chr(charset[0][0])
 
-                    accept = set()
-                    _next = DFAState(current.regex.derive(char, accept))
+                    _next = DFAState(current.regex.derive(char))
 
                     LOG.debug(f'Derivative of {current.name} of {repr(char)} => {_next}')
-                    LOG.debug(f'Transition for {[regex.CharSet._fmt_char(x) for x in charset[0]]} is {accept}')
+                    LOG.debug(f'Transition for {[regex.CharSet._fmt_char(x) for x in charset[0]]}')
 
-                    goto = Goto(_next, accept)
-
-                    LOG.debug(f'Goto events: {goto.events}')
+                    goto = Goto(_next)
 
                     for rng in charset:
                         for code in range(rng[0], rng[-1] + 1):
@@ -99,7 +73,7 @@ class DFA:
                 if state.regex.isnullable():
                     label = util.highlight(label)
 
-                print(f'{label}: {state} (events={state.prefix_events})')
+                print(f'{label}: {state}')
 
                 for mask in sorted(state.regex.charset.masks):
                     lsb_pos = (mask & -mask).bit_length() - 1
@@ -303,8 +277,7 @@ class DFAState:
 
         self.regex = expr
         self.name = None
-        self.prefix_events = None
-        self.goto = [Goto(DFAState.empty(), None)] * 256
+        self.goto = [Goto(DFAState.empty())] * 256
 
         return self
 
@@ -314,7 +287,6 @@ class DFAState:
             cls._empty = object.__new__(cls)
             cls._empty.regex = regex.RegexEmpty()
             cls._empty.name = None
-            cls._empty.prefix_events = None
             cls._empty.goto = [Goto(cls._empty)] * 256
             cls._instances[cls._empty.regex] = cls._empty
 

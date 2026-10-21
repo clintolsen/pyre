@@ -159,7 +159,7 @@ def _derive_branches(e, ch):
         return []
 
     if isinstance(e, (rx.RegexSym, rx.RegexDot)):
-        return [((), rx.RegexEpsilon())] if not e.derive(ch, set()).isempty else []
+        return [((), rx.RegexEpsilon())] if not e.derive(ch).isempty else []
 
     if isinstance(e, rx.RegexOr):
         return derive_branches(e.left, ch) + derive_branches(e.right, ch)
@@ -189,11 +189,11 @@ def _derive_branches(e, ch):
         ]
 
     if isinstance(e, rx.RegexDiff):
-        negated = e.right.derive(ch, set(), True)
+        negated = e.right.derive(ch)
         return [(m, rx.RegexDiff(t, negated)) for m, t in derive_branches(e.left, ch)]
 
     if isinstance(e, rx.RegexNot):
-        return [((), rx.RegexNot(e.expr.derive(ch, set(), True)))]
+        return [((), rx.RegexNot(e.expr.derive(ch)))]
 
     if isinstance(e, rx.RegexXor):
         return (derive_branches(rx.RegexDiff(e.left, e.right), ch) +
