@@ -15,17 +15,8 @@
 # applies whenever the next character can start an operand.
 #
 
-import itertools
-
 from . import event
 from . import regex
-
-# Internal group ids come from one process-wide counter, so groups in
-# separately parsed patterns never collide when the patterns are composed.
-# They are not the numbers users see: compiling renumbers groups 1, 2, 3...
-# in left-to-right order. Group 0 is reserved for the whole match.
-#
-_group_ids = itertools.count(1)
 
 # Binding powers, higher binds tighter. Binary operators are left
 # associative, so each right power is one more than its left power.
@@ -138,6 +129,7 @@ class _Parser:
         self.text = pattern
         self.pos = 0
         self.depth = 0
+        self.source = event.Source()
 
     def parse(self):
         if self._peek() is None:
@@ -252,8 +244,8 @@ class _Parser:
     #
     def _group(self, start):
         """
-        After '('. The group id is taken before the body is parsed, so ids
-        are handed out in left-to-right order of '('.
+        After '('. The group id is taken before the body is parsed, so
+        groups are numbered in left-to-right order of '('.
         """
         name = None
 
@@ -276,7 +268,8 @@ class _Parser:
             self._advance()
             name = self._group_name()
 
-        gid = next(_group_ids)
+        self.source.count += 1
+        gid = (self.source, self.source.count)
         body = self._group_body(start)
 
         open_ = regex.RegexMarker(events=(event.Event(event.OPEN, gid, name),))

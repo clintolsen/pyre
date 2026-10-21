@@ -172,6 +172,11 @@ class TestCaptureGroups(RegexTestCase):
         self.assertEqual(pyre.fullmatch("(a.)&(.c)", "ac"),
                          {0: [(0, 2)], 1: [(0, 2)], 2: [(0, 2)]})
 
+    def test_simplified_away_group_keeps_its_number(self):
+        """A group dropped by simplification does not renumber later groups."""
+        self.assertEqual(pyre.fullmatch("(?:(a)-.*)?(b)", "b"),
+                         {0: [(0, 1)], 2: [(0, 1)]})
+
     def test_captures_agree_with_python_re(self):
         """Path-consistent captures match Python's re where syntax overlaps."""
         import re
@@ -184,6 +189,10 @@ class TestCaptureGroups(RegexTestCase):
             ("(a+)+", "aa"),
             ("(?:(a)|b)*", "ab"),
             ("(a)|b", "b"),
+            ("(a){0}(b)", "b"),
+            ("(a)(b){0}(c)", "ac"),
+            ("(?:(a){0}|(x))(b)", "xb"),
+            ("(?:.*|(a))(b)", "xb"),
         ]
         for pattern, text in cases:
             with self.subTest(pattern=pattern, text=text):

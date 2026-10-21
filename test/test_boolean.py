@@ -234,6 +234,17 @@ class TestBooleanOps(RegexTestCase):
 
         self.assertEqual(composed.fullmatch("b"), {2: [(0, 1)], 0: [(0, 1)]})
 
+    def test_composition_counts_simplified_away_groups(self):
+        """An operand's dropped groups still offset the next operand's numbers."""
+        composed = pyre.compile(pyre.parse("(a){0}(b)") | pyre.parse("(c)"))
+        together = pyre.compile("(a){0}(b)|(c)")
+
+        for s in ("b", "c"):
+            with self.subTest(text=s):
+                self.assertEqual(composed.fullmatch(s), together.fullmatch(s))
+
+        self.assertEqual(composed.fullmatch("c"), {0: [(0, 1)], 3: [(0, 1)]})
+
     def test_composition_matches_single_parse_for_every_operator(self):
         """Each set operator numbers and reports groups like the combined text."""
         import operator

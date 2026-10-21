@@ -31,15 +31,20 @@ _NOT_NULLABLE = object()
 
 def group_numbers(expr):
     """
-    Map each internal group id in expr to the number users see.
+    Map each group id in expr to the number users see.
 
-    The parser draws group ids from a process-wide counter so separately
-    parsed patterns never collide. Here they are renumbered 1, 2, 3... in
-    the order their opening markers appear, left to right. A composed
-    pattern such as parse("(a)") | parse("(b)") therefore numbers its
-    groups exactly like parse("(a)|(b)").
+    Within one parsed pattern a group's number is the position of its '('
+    in the pattern string, so a group that simplifies away, as in (a){0}(b)
+    or (?:.*|(a))(b), still holds its number and (b) is group 2. When
+    patterns are composed, each one's groups are numbered after those of
+    the patterns that appear before it, left to right, so
+    parse("(a)") | parse("(b)") numbers its groups exactly like
+    parse("(a)|(b)"). An operand whose groups have all simplified away
+    leaves no trace, so it cannot hold its numbers.
     """
     numbers = {}
+    offsets = {}
+    total = 0
     visited = set()
     stack = [expr]
 
@@ -52,7 +57,11 @@ def group_numbers(expr):
         if node.ismarker:
             for ev in node.events:
                 if ev.kind == event.OPEN and ev.gid not in numbers:
-                    numbers[ev.gid] = len(numbers) + 1
+                    source, index = ev.gid
+                    if source not in offsets:
+                        offsets[source] = total
+                        total += source.count
+                    numbers[ev.gid] = offsets[source] + index
             continue
 
         # Push right first so the left child is visited first.
