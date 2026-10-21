@@ -18,6 +18,12 @@ CHARSET_MAX = (1 << 256)
 # ν(r) = ε if r is nullable (True) ...
 #        0 otherwise
 #
+# The numbered simplification rules in each constructor are the similarity
+# rules from Owens, Reppy and Turon, "Regular-expression derivatives
+# reexamined", except for ⊕, which the paper does not have. Each constructor
+# applies them in whatever order suits it, so the numbers are references,
+# not a sequence.
+#
 class Regex:
     '''Base class for all regular expression objects'''
     _instance = {}
@@ -280,6 +286,40 @@ class Regex:
         return k > 0 and xs[k:] == ys and all(p.isnullable() for p in xs[:k])
 
     @staticmethod
+    def _may_subsume(expr):
+        '''
+        False if no alternative in expr can subsume another: that takes one
+        that is nullable or a concatenation that starts with something
+        nullable. Keyword lists never qualify, so this skips the check.
+        '''
+        if isinstance(expr, RegexOr):
+            return expr.may_subsume
+        return expr.isnullable() or (isinstance(expr, RegexConcat) and
+                                     expr.args[0].isnullable())
+
+    @staticmethod
+    def _subsumed(xs, ys):
+        '''
+        The alternatives in ys that some alternative in xs subsumes. Only a
+        concatenation can subsume anything but ε, and only one that ends the
+        way y does, so xs is indexed by last operand.
+        '''
+        ends = {}
+        for x in xs:
+            if isinstance(x, RegexConcat):
+                ends.setdefault(x.args[-1], []).append(x)
+
+        out = set()
+        for y in ys:
+            if y.isepsilon:
+                candidates = xs
+            else:
+                candidates = ends.get(y.args[-1] if isinstance(y, RegexConcat) else y, ())
+            if any(x is not y and Regex._subsumes(x, y) for x in candidates):
+                out.add(y)
+        return out
+
+    @staticmethod
     def get_args(expr, expr_type):
         '''
         The operands of expr as a flat list if it is an expr_type node, so
@@ -450,16 +490,24 @@ class RegexOr(Regex):
             if not ordered or args_u == Regex.unique(args_r):
                 return right
 
-        # 6) s + p·s ≈ p·s when p is nullable, since then L(s) ⊆ L(p·s).
-        #    ε + r ≈ r when r is nullable is the case where s is empty.
-        #    Only without captures, where dropping an alternative cannot
-        #    change which one reports groups.
+        # Beyond the paper's rules, s + p·s ≈ p·s when p is nullable, since
+        # then L(s) ⊆ L(p·s). ε + r ≈ r when r is nullable is the case where
+        # s is empty. This only shrinks DFAs; the paper's rules are what make
+        # them finite. Only without captures, where dropping an alternative
+        # cannot change which one reports groups.
+        #
+        # Each side was already reduced when it was built, so only pairs
+        # with one alternative from each side need checking. Checking every
+        # pair made large alternations cubic to build.
         #
         if not ordered:
-            kept = [y for y in args_u
-                    if not any(x is not y and Regex._subsumes(x, y) for x in args_u)]
-            if len(kept) < len(args_u):
-                return functools.reduce(RegexOr, kept)
+            dropped = set()
+            if Regex._may_subsume(right):
+                dropped |= Regex._subsumed(args_r, args_l)
+            if Regex._may_subsume(left):
+                dropped |= Regex._subsumed(args_l, args_r)
+            if dropped:
+                return functools.reduce(RegexOr, [y for y in args_u if y not in dropped])
 
         # 2) r + s ≈ s + r, unless captures make order matter
         #
@@ -474,6 +522,7 @@ class RegexOr(Regex):
             self.right = right
             self.args = args
             self.charset = self.left.charset & self.right.charset
+            self.may_subsume = Regex._may_subsume(left) or Regex._may_subsume(right)
 
         return cls._intern(key, init)
 
