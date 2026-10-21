@@ -37,6 +37,7 @@ class Regex:
             self.id = len(Regex._instance)
 
             self._nullable = None
+            self._derivatives = {}
             self.events = ()
 
             self.isempty = False
@@ -73,8 +74,20 @@ class Regex:
     def isnullable(self):
         return self.nullable().isepsilon
 
+    # Nodes are interned and immutable, so each derivative is computed once
+    # per character and kept. Derivatives share subterms, and without this
+    # the shared parts are derived again along every path that reaches them,
+    # which grows exponentially with nested stars such as (a(a(a)*)*)*.
+    #
     def derive(self, ch):
-        raise Exception('derive')
+        try:
+            return self._derivatives[ch]
+        except KeyError:
+            result = self._derivatives[ch] = self._derive(ch)
+            return result
+
+    def _derive(self, ch):
+        raise NotImplementedError(f'{type(self).__name__}._derive')
 
     __hash__ = object.__hash__
     def __eq__(self, other):
@@ -282,7 +295,7 @@ class RegexEmpty(Regex):
 
         return cls._intern(key, init)
 
-    def derive(self, ch):
+    def _derive(self, ch):
         return self
 
     def __str__(self):
@@ -311,7 +324,7 @@ class RegexEpsilon(Regex):
     def nullable(self):
         return self
 
-    def derive(self, ch):
+    def _derive(self, ch):
         return RegexEmpty()
 
     def __str__(self):
@@ -360,7 +373,7 @@ class RegexSym(Regex):
         return cls._intern(key, init)
 
 
-    def derive(self, ch):
+    def _derive(self, ch):
         bit = 1 << ord(ch)
         match = bool(self.mask & bit)
 
@@ -441,7 +454,7 @@ class RegexOr(Regex):
 
         return self._nullable
 
-    def derive(self, ch):
+    def _derive(self, ch):
         return RegexOr(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
@@ -496,7 +509,7 @@ class RegexXor(Regex):
 
         return self._nullable
 
-    def derive(self, ch):
+    def _derive(self, ch):
         return RegexXor(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
@@ -565,7 +578,7 @@ class RegexAnd(Regex):
 
         return self._nullable
 
-    def derive(self, ch):
+    def _derive(self, ch):
         return RegexAnd(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
@@ -606,7 +619,7 @@ class RegexStar(Regex):
     def nullable(self):
         return RegexEpsilon()
 
-    def derive(self, ch):
+    def _derive(self, ch):
         return RegexConcat(self.expr.derive(ch), self)
 
     def __str__(self):
@@ -640,7 +653,7 @@ class RegexPlus(Regex):
     def nullable(self):
         return self.expr.nullable()
 
-    def derive(self, ch):
+    def _derive(self, ch):
         return RegexConcat(self.expr.derive(ch), RegexStar(self.expr))
 
     def __str__(self):
@@ -668,7 +681,7 @@ class RegexOpt(Regex):
     def nullable(self):
         return RegexEpsilon()
 
-    def derive(self, ch):
+    def _derive(self, ch):
         return self.expr.derive(ch)
 
     def __str__(self):
@@ -693,7 +706,7 @@ class RegexDot(Regex):
 
         return cls._intern(key, init)
 
-    def derive(self, ch):
+    def _derive(self, ch):
         return RegexEpsilon()
 
     def __str__(self):
@@ -744,7 +757,7 @@ class RegexConcat(Regex):
             self._nullable = RegexAnd(self.left.nullable(), self.right.nullable())
         return self._nullable
 
-    def derive(self, ch):
+    def _derive(self, ch):
         left = RegexConcat(self.left.derive(ch), self.right)
 
         if not self.left.isnullable():
@@ -809,7 +822,7 @@ class RegexDiff(Regex):
 
         return self._nullable
 
-    def derive(self, ch):
+    def _derive(self, ch):
         return RegexDiff(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
@@ -852,7 +865,7 @@ class RegexNot(Regex):
 
         return self._nullable
 
-    def derive(self, ch):
+    def _derive(self, ch):
         return RegexNot(self.expr.derive(ch))
 
     def __str__(self):
@@ -896,7 +909,7 @@ class RegexExpr(Regex):
 
         return self._nullable
 
-    def derive(self, ch):
+    def _derive(self, ch):
         return RegexExpr(self.expr.derive(ch))
 
     def __str__(self):
@@ -922,7 +935,7 @@ class RegexMarker(Regex):
     def nullable(self):
         return RegexEpsilon()
 
-    def derive(self, ch):
+    def _derive(self, ch):
         # Markers don't match characters
         return RegexEmpty()
 
