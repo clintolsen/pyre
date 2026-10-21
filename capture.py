@@ -64,19 +64,11 @@ def group_numbers(expr):
                     numbers[ev.gid] = offsets[source] + index
             continue
 
-        # Push right first so the left child is visited first.
+        # Push the operands in reverse so the first is visited first.
         #
-        stack.extend(reversed(_children(node)))
+        stack.extend(reversed(node.args))
 
     return numbers
-
-
-def _children(expr):
-    if hasattr(expr, 'left') and hasattr(expr, 'right'):
-        return (expr.left, expr.right)
-    if hasattr(expr, 'expr'):
-        return (expr.expr,)
-    return ()
 
 
 def nullable_markers(expr):
@@ -104,17 +96,20 @@ def _nullable_markers(e):
         return ()
 
     if isinstance(e, rx.RegexOr):
-        left = nullable_markers(e.left)
-        return left if left is not None else nullable_markers(e.right)
+        for arg in e.args:
+            markers = nullable_markers(arg)
+            if markers is not None:
+                return markers
+        return None
 
     if isinstance(e, (rx.RegexConcat, rx.RegexAnd)):
-        left = nullable_markers(e.left)
-        if left is None:
-            return None
-        right = nullable_markers(e.right)
-        if right is None:
-            return None
-        return left + right
+        out = ()
+        for arg in e.args:
+            markers = nullable_markers(arg)
+            if markers is None:
+                return None
+            out += markers
+        return out
 
     if isinstance(e, rx.RegexPlus):
         return nullable_markers(e.expr)
@@ -171,13 +166,21 @@ def _derive_branches(e, ch):
         return [((), rx.RegexEpsilon())] if not e.derive(ch).isempty else []
 
     if isinstance(e, rx.RegexOr):
-        return derive_branches(e.left, ch) + derive_branches(e.right, ch)
+        return [branch for arg in e.args for branch in derive_branches(arg, ch)]
 
+    # Each leading nullable operand lets branches of the next one in too,
+    # after the markers its empty match crosses.
+    #
     if isinstance(e, rx.RegexConcat):
-        out = [(m, rx.RegexConcat(t, e.right)) for m, t in derive_branches(e.left, ch)]
-        skipped = nullable_markers(e.left)
-        if skipped is not None:
-            out += [(skipped + m, t) for m, t in derive_branches(e.right, ch)]
+        out = []
+        skipped = ()
+        for i, arg in enumerate(e.args):
+            rest = rx.RegexConcat.of(e.args[i + 1:])
+            out += [(skipped + m, rx.RegexConcat(t, rest)) for m, t in derive_branches(arg, ch)]
+            markers = nullable_markers(arg)
+            if markers is None:
+                break
+            skipped += markers
         return out
 
     if isinstance(e, rx.RegexStar):
@@ -191,11 +194,14 @@ def _derive_branches(e, ch):
         return derive_branches(e.expr, ch)
 
     if isinstance(e, rx.RegexAnd):
-        return [
-            (lm + rm, rx.RegexAnd(lt, rt))
-            for lm, lt in derive_branches(e.left, ch)
-            for rm, rt in derive_branches(e.right, ch)
-        ]
+        out = derive_branches(e.args[0], ch)
+        for arg in e.args[1:]:
+            out = [
+                (lm + rm, rx.RegexAnd(lt, rt))
+                for lm, lt in out
+                for rm, rt in derive_branches(arg, ch)
+            ]
+        return out
 
     if isinstance(e, rx.RegexDiff):
         negated = e.right.derive(ch)

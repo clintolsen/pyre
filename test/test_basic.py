@@ -166,5 +166,28 @@ class TestSimplification(RegexTestCase):
                 for s in ["", "a", "ab", "ba", "abcd"[:n], "b"]:
                     self.assert_fullmatch_same_as_re(pat, s)
 
+class TestLongPatterns(RegexTestCase):
+    # A run of one operator is a single node holding all its operands, so
+    # its length does not count against Python's recursion limit. Each of
+    # these overflowed the stack when operands were nested in pairs.
+
+    def test_long_literal(self):
+        pat = "ab" * 300
+        self.assertEqual(pyre.fullmatch(pat, pat), {0: [(0, len(pat))]})
+        self.assertEqual(pyre.fullmatch(pat, pat[:-1]), {})
+        self.assertEqual(str(pyre.parse(pat)), "·".join(pat))
+
+    def test_long_alternation(self):
+        pat = "|".join(f"k{i}" for i in range(600))
+        for s in ["k0", "k599", "k600", "k"]:
+            with self.subTest(s=s):
+                self.assert_fullmatch_same_as_re(pat, s)
+
+    def test_many_groups(self):
+        pat = "(a)" * 600
+        result = pyre.fullmatch(pat, "a" * 600)
+        self.assertEqual(result[600], [(599, 600)])
+        self.assertEqual(len(result), 601)
+
 if __name__ == "__main__":
     unittest.main()

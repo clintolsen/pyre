@@ -45,7 +45,15 @@ class Regex:
 
             self._nullable = None
             self._derivatives = {}
+            self._stripped = None
             self.events = ()
+
+            # The operands of this node, in order. Every walk over the tree
+            # goes through args, so |, & and · nodes, which keep their
+            # operands flattened, are one level deep however many operands
+            # they have.
+            #
+            self.args = ()
 
             self.isempty = False
             self.isepsilon = False
@@ -63,13 +71,7 @@ class Regex:
             # Simplifications and interning that are fine for the language
             # must not reorder or drop such terms.
             #
-            self.hascaptures = self.ismarker or any(
-                child.hascaptures
-                for child in (getattr(self, 'left', None),
-                              getattr(self, 'right', None),
-                              getattr(self, 'expr', None))
-                if child is not None
-            )
+            self.hascaptures = self.ismarker or any(arg.hascaptures for arg in self.args)
 
             Regex._instance[key] = self
             return self
@@ -109,16 +111,17 @@ class Regex:
     # separately parsed copies of one pattern.
     #
     def _without_captures(self):
+        if not self.hascaptures:
+            return self
         if self.ismarker:
             return RegexEpsilon()
-        if hasattr(self, 'left') and hasattr(self, 'right'):
-            return self.__class__(
-                self.left._without_captures(),
-                self.right._without_captures(),
-            )
-        if hasattr(self, 'expr'):
-            return self.__class__(self.expr._without_captures())
-        return self
+        if self._stripped is None:
+            args = [arg._without_captures() for arg in self.args]
+            if len(args) == 1:
+                self._stripped = self.__class__(args[0])
+            else:
+                self._stripped = functools.reduce(self.__class__, args)
+        return self._stripped
 
     def __or__(self, other):
         if not isinstance(other, Regex):
@@ -170,12 +173,8 @@ class Regex:
 
     def __repr__(self):
         rep = '<%s %s=0x%x' % (self.__class__.__name__, self.id, id(self))
-        if hasattr(self, 'left'):
-            rep += ' 0x%x' % id(self.left)
-        if hasattr(self, 'right'):
-            rep += ' 0x%x' % id(self.right)
-        if hasattr(self, 'expr'):
-            rep += ' 0x%x' % id(self.expr)
+        for arg in self.args:
+            rep += ' 0x%x' % id(arg)
         if hasattr(self, 'sym'):
             rep += ' %s' % repr(self.sym)
         rep += f' events={self.events}'
@@ -222,6 +221,10 @@ class Regex:
 
         return '%s' % child
 
+    def join(self, sep):
+        ''' The operands printed between separators, grouped left to right '''
+        return sep.join(self.paren(arg, right=i > 0) for i, arg in enumerate(self.args))
+
     def tree(self, prefix='', is_last=True):
         ''' Output a representation of an RE as an ASCII tree '''
         out = ''
@@ -231,14 +234,13 @@ class Regex:
             else:
                 out += prefix[:-4] + '├── '
         out += repr(self) + '\n'
-        if hasattr(self, 'right') and hasattr(self, 'left'):
+
+        # Last operand first, so the first one ends the tree
+        #
+        for i, arg in enumerate(reversed(self.args)):
+            is_last = i == len(self.args) - 1
             out += prefix + '│    \n'
-            out += self.right.tree(prefix=prefix + '│   ', is_last=False)
-            out += prefix + '│    \n'
-            out += self.left.tree(prefix=prefix + '    ', is_last=True)
-        if hasattr(self, 'expr'):
-            out += prefix + '│    \n'
-            out += self.expr.tree(prefix=prefix + '    ', is_last=True)
+            out += arg.tree(prefix=prefix + ('    ' if is_last else '│   '), is_last=is_last)
 
         return out
 
@@ -251,12 +253,8 @@ class Regex:
 
         # Walk to the children
         #
-        if hasattr(self, 'left'):
-            self.left.walk(code)
-        if hasattr(self, 'right'):
-            self.right.walk(code)
-        if hasattr(self, 'expr'):
-            self.expr.walk(code)
+        for arg in self.args:
+            arg.walk(code)
 
 
     @staticmethod
@@ -518,25 +516,26 @@ class RegexOr(Regex):
             key = (cls, frozenset(args), frozenset(kwargs.items()))
 
         def init(self):
-            self.left = left
-            self.right = right
             self.args = args
-            self.charset = self.left.charset & self.right.charset
+            self.charset = left.charset & right.charset
             self.may_subsume = Regex._may_subsume(left) or Regex._may_subsume(right)
 
         return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
-            self._nullable = RegexOr(self.left.nullable(), self.right.nullable())
+            if any(arg.isnullable() for arg in self.args):
+                self._nullable = RegexEpsilon()
+            else:
+                self._nullable = RegexEmpty()
 
         return self._nullable
 
     def _derive(self, ch):
-        return RegexOr(self.left.derive(ch), self.right.derive(ch))
+        return functools.reduce(RegexOr, [arg.derive(ch) for arg in self.args])
 
     def __str__(self):
-        return f'{self.paren(self.left)} {RegexOr.sym} {self.paren(self.right, right=True)}'
+        return self.join(f' {RegexOr.sym} ')
 
 
 class RegexXor(Regex):
@@ -577,6 +576,7 @@ class RegexXor(Regex):
         def init(self):
             self.left = left
             self.right = right
+            self.args = (left, right)
             self.charset = self.left.charset & self.right.charset
 
         return cls._intern(key, init)
@@ -591,7 +591,7 @@ class RegexXor(Regex):
         return RegexXor(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
-        return f'{self.paren(self.left)} {RegexXor.sym} {self.paren(self.right, right=True)}'
+        return self.join(f' {RegexXor.sym} ')
 
 
 class RegexAnd(Regex):
@@ -645,24 +645,33 @@ class RegexAnd(Regex):
             key = (cls, frozenset(args), frozenset(kwargs.items()))
 
         def init(self):
-            self.left = left
-            self.right = right
             self.args = args
-            self.charset = self.left.charset & self.right.charset
+            self.charset = left.charset & right.charset
 
         return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
-            self._nullable = RegexAnd(self.left.nullable(), self.right.nullable())
+            if all(arg.isnullable() for arg in self.args):
+                self._nullable = RegexEpsilon()
+            else:
+                self._nullable = RegexEmpty()
 
         return self._nullable
 
     def _derive(self, ch):
-        return RegexAnd(self.left.derive(ch), self.right.derive(ch))
+        # Stop at the first operand with no derivative, since ∅ & r ≈ ∅
+        #
+        result = None
+        for arg in self.args:
+            d = arg.derive(ch)
+            if d.isempty:
+                return d
+            result = d if result is None else RegexAnd(result, d)
+        return result
 
     def __str__(self):
-        return f'{self.paren(self.left)} {RegexAnd.sym} {self.paren(self.right, right=True)}'
+        return self.join(f' {RegexAnd.sym} ')
 
 
 class RegexStar(Regex):
@@ -690,6 +699,7 @@ class RegexStar(Regex):
 
         def init(self):
             self.expr = expr
+            self.args = (expr,)
             self.charset = self.expr.charset
             self.isstar = True
             self.isany = self.expr.isdot
@@ -725,6 +735,7 @@ class RegexPlus(Regex):
 
         def init(self):
             self.expr = expr
+            self.args = (expr,)
             self.charset = self.expr.charset
             self.isplus = True
 
@@ -754,6 +765,7 @@ class RegexOpt(Regex):
 
         def init(self):
             self.expr = expr
+            self.args = (expr,)
             self.charset = self.expr.charset
 
         return cls._intern(key, init)
@@ -823,33 +835,67 @@ class RegexConcat(Regex):
         key = (cls, args, frozenset(kwargs.items()))
 
         def init(self):
-            self.left = left
-            self.right = right
             self.args = args
-            if self.left.isnullable():
-                self.charset = self.left.charset & self.right.charset
+            if left.isnullable():
+                self.charset = left.charset & right.charset
             else:
-                self.charset = self.left.charset
+                self.charset = left.charset
+
+        return cls._intern(key, init)
+
+    @classmethod
+    def of(cls, args):
+        '''
+        The concatenation of args, which must already be flat: no operand is
+        ε, ∅ or itself a concatenation. Derivatives use this to build the
+        rest of a concatenation directly from its operands.
+        '''
+        if len(args) < 2:
+            return args[0] if args else RegexEpsilon()
+
+        args = tuple(args)
+        key = (cls, args, frozenset())
+
+        def init(self):
+            self.args = args
+
+            # The first character can come from each leading nullable
+            # operand and from the first operand that is not nullable
+            #
+            self.charset = args[0].charset
+            for i in range(1, len(args)):
+                if not args[i - 1].isnullable():
+                    break
+                self.charset = self.charset & args[i].charset
 
         return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
-            self._nullable = RegexAnd(self.left.nullable(), self.right.nullable())
+            if all(arg.isnullable() for arg in self.args):
+                self._nullable = RegexEpsilon()
+            else:
+                self._nullable = RegexEmpty()
+
         return self._nullable
 
+    # ∂𝑎(r·s) = ∂𝑎(r)·s + ν(r)·∂𝑎(s), applied to r1·…·rn grouped from the
+    # left as ((r1·r2)·r3)·…, one operand at a time. Each step simplifies the
+    # derivative of the prefix as a whole, so (b*·.* | .*)·~. becomes ¬∅·~.
+    # Once the prefix is not nullable, the rest only gets concatenated.
+    #
     def _derive(self, ch):
-        left = RegexConcat(self.left.derive(ch), self.right)
+        args = self.args
+        result = args[0].derive(ch)
+        for i in range(1, len(args)):
+            if not args[i - 1].isnullable():
+                return RegexConcat(result, RegexConcat.of(args[i:]))
+            result = RegexOr(RegexConcat(result, args[i]), args[i].derive(ch))
 
-        if not self.left.isnullable():
-            return left
-
-        right = RegexConcat(self.left.nullable(), self.right.derive(ch))
-
-        return RegexOr(left, right)
+        return result
 
     def __str__(self):
-        return f'{self.paren(self.left)}{RegexConcat.sym}{self.paren(self.right, right=True)}'
+        return self.join(RegexConcat.sym)
 
 
 class RegexDiff(Regex):
@@ -893,6 +939,7 @@ class RegexDiff(Regex):
         def init(self):
             self.left = left
             self.right = right
+            self.args = (left, right)
             self.charset = self.left.charset & self.right.charset
 
         return cls._intern(key, init)
@@ -907,7 +954,7 @@ class RegexDiff(Regex):
         return RegexDiff(self.left.derive(ch), self.right.derive(ch))
 
     def __str__(self):
-        return f'{self.paren(self.left)} {RegexDiff.sym} {self.paren(self.right, right=True)}'
+        return self.join(f' {RegexDiff.sym} ')
 
 
 class RegexNot(Regex):
@@ -931,6 +978,7 @@ class RegexNot(Regex):
 
         def init(self):
             self.expr = expr
+            self.args = (expr,)
             self.charset = self.expr.charset
             self.isany = self.expr.isempty
             self.isnot = True
