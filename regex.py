@@ -245,15 +245,21 @@ class Regex:
         ''' Gather all the arguments for an expression reaching down to sub-expressions '''
         args = []
 
-        if isinstance(expr, expr_type):
-            if hasattr(expr, 'left'):
-                args += Regex.get_args(expr.left, expr_type)
-            if hasattr(expr, 'right'):
-                args += Regex.get_args(expr.right, expr_type)
-            if hasattr(expr, 'expr'):
-                args += Regex.get_args(expr.expr, expr_type)
-        else:
-            args.append(expr)
+        # A long literal or alternation is a chain as deep as the pattern is
+        # long, so walk it with an explicit stack rather than recursion.
+        # Children are pushed in reverse so they come off in order.
+        #
+        stack = [expr]
+        while stack:
+            node = stack.pop()
+
+            if not isinstance(node, expr_type):
+                args.append(node)
+                continue
+
+            for attr in ('expr', 'right', 'left'):
+                if hasattr(node, attr):
+                    stack.append(getattr(node, attr))
 
         return args
 
