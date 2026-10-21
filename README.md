@@ -61,7 +61,7 @@ The project includes:
 
 ## Installation
 
-Requires **Python 3.10+** and **PLY**.
+Requires **Python 3.9+** and **PLY**.
 
 ### Installing PLY
 
