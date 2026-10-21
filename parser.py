@@ -1,12 +1,24 @@
-from .ply import yacc as yacc
-from .ply import lex as lex
-from . import regex
-
-from . import event
+#
+# parser.py
+#
+# Hand-written parser for regex patterns.
+#
+# Patterns are parsed straight from the characters, with no separate token
+# stream. Regex syntax is mostly single characters, and what a character
+# means depends on where the parser is: inside [...], inside {m,n}, at the
+# start of an operand, or after one. That is easier to decide here than in
+# a lexer.
+#
+# Operators are parsed Pratt style. Every operator has a binding power, and
+# _expr(min_bp) keeps folding operators to its right while they bind at
+# least as tightly as min_bp. Concatenation has no operator character; it
+# applies whenever the next character can start an operand.
+#
 
 import itertools
-import logging
-LOG = logging.getLogger(__file__)
+
+from . import event
+from . import regex
 
 # Internal group ids come from one process-wide counter, so groups in
 # separately parsed patterns never collide when the patterns are composed.
@@ -15,379 +27,428 @@ LOG = logging.getLogger(__file__)
 #
 _group_ids = itertools.count(1)
 
-class TokenValue:
-    def __init__(self, token, **kwds):
-        self.value = token.value
-        self.kwds = kwds
-        
-        if token.lexer.events:
-            self.kwds['events'] = tuple(token.lexer.events)
-            LOG.debug(self)
-            token.lexer.events = []
+# Binding powers, higher binds tighter. Binary operators are left
+# associative, so each right power is one more than its left power.
+#
+#   | ^ -    set operators       a|b-c   is (a|b)-c
+#   &        intersection        a|b&c   is a|(b&c)
+#   ab       concatenation       ab&c    is (ab)&c
+#   * + ? {} postfix repeats     ab*     is a(b*)
+#   ~        complement          ~a*     is (~a)*
+#
+_INFIX = {
+    '|': (10, 11, regex.RegexOr),
+    '^': (10, 11, regex.RegexXor),
+    '-': (10, 11, regex.RegexDiff),
+    '&': (20, 21, regex.RegexAnd),
+}
+_CONCAT = (30, 31)
+_POSTFIX = 40
+_PREFIX = 50
 
-    def __repr__(self):
-        return f'TokenValue({self.value!r}, {self.kwds!r})'
+_POSTFIX_OPS = frozenset('*+?{')
+
+# Deepest nesting of groups and ~ allowed. The parser and the passes over
+# the parsed tree are recursive, so a limit turns a RecursionError deep in
+# the engine into a PatternError here.
+#
+_MAX_DEPTH = 100
+
+# Characters that cannot start an operand. '-' is a literal at the start of
+# an operand, but after one it is the difference operator, so it ends a
+# concatenation.
+#
+_NOT_OPERAND = frozenset('|^-&)*+?{')
+
+# Ignored between tokens outside a character class, as in Python's re.X
+#
+_WHITESPACE = frozenset(' \t\n\r\v\f')
+
+_DIGIT_MASK = 0
+for code in range(ord('0'), ord('9') + 1):
+    _DIGIT_MASK |= 1 << code
+
+_SPACE_MASK = 0
+for ch in (' ', '\t', '\n', '\r', '\v', '\f'):
+    _SPACE_MASK |= 1 << ord(ch)
+
+_WORD_MASK = 0
+for code in range(ord('A'), ord('Z') + 1):
+    _WORD_MASK |= 1 << code
+for code in range(ord('a'), ord('z') + 1):
+    _WORD_MASK |= 1 << code
+_WORD_MASK |= _DIGIT_MASK
+_WORD_MASK |= 1 << ord('_')
+
+del code, ch
+
+_CONTROL_ESCAPES = {
+    'a': '\a',
+    'b': '\b',
+    't': '\t',
+    'n': '\n',
+    'v': '\v',
+    'f': '\f',
+    'r': '\r',
+}
+
+# \d, \w, \s and their negations: (mask, negate)
+#
+_SETS = {
+    'd': (_DIGIT_MASK, False),
+    'D': (_DIGIT_MASK, True),
+    'w': (_WORD_MASK, False),
+    'W': (_WORD_MASK, True),
+    's': (_SPACE_MASK, False),
+    'S': (_SPACE_MASK, True),
+}
+
+_NAME_START = frozenset('abcdefghijklmnopqrstuvwxyz'
+                        'ABCDEFGHIJKLMNOPQRSTUVWXYZ_')
+_NAME_CHARS = _NAME_START | frozenset('0123456789')
+_DIGITS = frozenset('0123456789')
 
 
-class Parser:
-    def __init__(self, **kwargs):
-        self.lexer = lex.lex(module=self, **kwargs)
-        self.parser = yacc.yacc(module=self, **kwargs)
-        self.lexer.groups = [0]
-        self.lexer.events = []
-        self.lexer.line_start = 0
-        self.errors = 0
+class PatternError(ValueError):
+    """
+    A syntax error in a pattern. Like re.error, it carries the pattern and
+    the position of the error, with lineno and colno counted from 1.
+    """
+    def __init__(self, msg, pattern, pos):
+        self.msg = msg
+        self.pattern = pattern
+        self.pos = pos
+        self.lineno = pattern.count('\n', 0, pos) + 1
+        self.colno = pos - (pattern.rfind('\n', 0, pos) + 1) + 1
 
-    def parse(self, *args, **kwargs):
-        return self.parser.parse(*args, **kwargs)
+        message = f'{msg} at position {pos}'
+        if '\n' in pattern:
+            message += f' (line {self.lineno}, column {self.colno})'
+
+        super().__init__(message)
 
 
-    tokens = (
-        'PLUS',
-        'STAR',
-        'QMARK',
-        'DOT',
-        'LPAREN',
-        'LPAREN_NAMED',
-        'LPAREN_NOCAPTURE',
-        'RPAREN',
-        'LSQUARE',
-        'RSQUARE',
-        'LCURLY',
-        'RCURLY',
-        'COMMA',
-        'INTEGER',
-        'CARET',
-        'NOT',
-        'AND',
-        'OR',
-        'MINUS',
-        'DIGIT',
-        'NOTDIGIT',
-        'SPACE',
-        'NOTSPACE',
-        'WORD',
-        'NOTWORD',
-        'EPSILON',
-        'ESCAPED',
-        'CLASS_SET',
-        'ID'
-    )
+def parse(pattern):
+    """ Parse a pattern string into a Regex. Raises PatternError. """
+    return _Parser(pattern).parse()
 
-    t_ignore = ' \t\r\v\f'
 
-    def column(self, t):
-        return t.lexpos - t.lexer.line_start
+class _Parser:
+    def __init__(self, pattern):
+        self.text = pattern
+        self.pos = 0
+        self.depth = 0
 
-    def t_error(self, t):
-        LOG.error(f'{t.lineno}:{self.column(t)}: Invalid character {repr(t.value[0])}')
-        t.lexer.skip(1)
+    def parse(self):
+        if self._peek() is None:
+            self._error('empty pattern')
 
-    states = (
-        ('repeat', 'exclusive'),
-        ('class', 'exclusive')
-    )
+        expr = self._expr(0)
 
-    def t_comment(self, t):
-        r'\#[^\n]*'
-        pass
+        ch = self._peek()
+        if ch == ')':
+            self._error('unbalanced parenthesis')
+        if ch is not None:
+            self._error(f'unexpected {ch!r}')
 
-    def t_newline(self, t):
-        r'\n+'
-        t.lexer.lineno += len(t.value)
-        t.lexer.line_start = t.lexpos
+        return expr
 
-    def t_EPSILON(self, t):
-        r'ε'
-        t.value = TokenValue(t)
-        return t
-
-    def t_DIGIT(self, t):
-        r'\\d'
-        t.value = TokenValue(t)
-        return t
-
-    def t_NOTDIGIT(self, t):
-        r'\\D'
-        t.value = TokenValue(t)
-        return t
-
-    def t_SPACE(self, t):
-        r'\\s'
-        t.value = TokenValue(t)
-        return t
-
-    def t_NOTSPACE(self, t):
-        r'\\S'
-        t.value = TokenValue(t)
-        return t
-
-    def t_WORD(self, t):
-        r'\\w'
-        t.value = TokenValue(t)
-        return t
-
-    def t_NOTWORD(self, t):
-        r'\\W'
-        t.value = TokenValue(t)
-        return t    
-
-    def t_CARET(self, t):
-        r'\^'
-        t.value = TokenValue(t)
-        return t
-
-    def t_MINUS(self, t):
-        r'\-'
-        t.value = TokenValue(t)
-        return t
-
-    def t_AND(self, t):
-        r'\&'
-        t.value = TokenValue(t)
-        return t
-
-    def t_OR(self, t):
-        r'\|'
-        t.value = TokenValue(t)
-        return t
-
-    def t_QMARK(self, t):
-        r'\?'
-        t.value = TokenValue(t)
-        return t
-
-    def t_DOT(self, t):
-        r'\.'
-        t.value = TokenValue(t)
-        return t
-
-    def t_NOT(self, t):
-        r'\~'
-        t.value = TokenValue(t)
-        return t
-
-    def t_STAR(self, t):
-        r'\*'
-        t.value = TokenValue(t)
-        return t
-
-    def t_PLUS(self, t):
-        r'\+'
-        t.value = TokenValue(t)
-        return t
-
-    def t_LPAREN_NAMED(self, t):
-        r'''(?x:                    # re.X
-              \( \s*                # '('
-                \? \s*              # '?'
-                P? \s*              # Optional 'P'
-                < \s*               # '<'
-                  (?P<name>
-                    [a-zA-Z_]       # ID
-                    [a-zA-Z0-9_]*   # ...
-                  ) \s*             
-                > \s*               # '>'
-              )
-        '''
-        gid = next(_group_ids)
-        self.lexer.events.append(event.Event(event.OPEN, gid,
-            t.lexer.lexmatch.group('name')))
-        t.value = TokenValue(t)
-        self.lexer.groups.append(gid)
-        return t
-
-    def t_LPAREN_NOCAPTURE(self, t):
-        r'\(\s*\?\s*:'
-        t.value = TokenValue(t)
-        self.lexer.groups.append(-1)
-        return t
-
-    def t_LPAREN(self, t):
-        r'\('
-        gid = next(_group_ids)
-        self.lexer.events.append(event.Event(event.OPEN, gid))
-        t.value = TokenValue(t)
-        self.lexer.groups.append(gid)
-        return t
-
-    def t_RPAREN(self, t):
-        r'\)'
-        group = self.lexer.groups.pop()
-        if group != -1:
-            self.lexer.events.append(event.Event(event.CLOSE, group))
-        t.value = TokenValue(t)
-        return t
-
-    def t_LCURLY(self, t):
-        r'\{'
-        t.lexer.begin('repeat')
-        return t
-
-    def t_ESCAPED(self, t):
-        r'\\.'
-        t.value = TokenValue(t)
-        return t
-
-    t_repeat_ignore = ' \t'
-
-    def t_repeat_INTEGER(self, t):
-        r'\d+'
-        t.value = int(t.value)
-        return t
-
-    def t_repeat_COMMA(self, t):
-        r'\,'
-        return t
-
-    def t_repeat_RCURLY(self, t):
-        r'\}'
-        t.lexer.begin('INITIAL')
-        return t
-
-    def t_repeat_error(self, t):
-        LOG.error("Illegal character '%s' in repeat at %d", t.value[0], t.lexpos)
-        t.lexer.skip(1)
-
-    def t_LSQUARE(self, t):
-        r'\['
-        t.lexer.begin('class')
-        self.ID_scan = []
-        return t
-
-    # Whitespace is significant inside a character class, as in Python's
-    # re.X, so [ ] matches a space.
+    # Pratt core
     #
-    t_class_ignore = ''
+    def _expr(self, min_bp):
+        lhs = self._operand()
 
-    def t_class_error(self, t):
-        LOG.error("Illegal character '%s' in class at %d", t.value[0], t.lexpos)
-        t.lexer.skip(1)
+        while True:
+            ch = self._peek()
 
-    def t_class_ESCAPED(self, t):
-        r'\\.'
+            if ch in _POSTFIX_OPS:
+                if _POSTFIX < min_bp:
+                    break
+                lhs = self._postfix(lhs)
 
-        self.ID_scan.append(t.value)
+            elif ch in _INFIX:
+                lbp, rbp, op = _INFIX[ch]
+                if lbp < min_bp:
+                    break
+                self._advance()
+                lhs = op(lhs, self._expr(rbp))
 
-        if t.value in Parser._CLASS_SETS:
-            # \d, \w, \s and their negations add a whole set of characters
-            #
-            mask, negate = Parser._CLASS_SETS[t.value]
-            t.type = 'CLASS_SET'
-            t.value = TokenValue(t)
-            t.value.value = (regex.CHARSET_MAX - 1) ^ mask if negate else mask
-        else:
-            # Control escapes such as \t become that character; any other
-            # escaped character, such as \] or \-, is taken literally
-            #
-            ch = Parser._CONTROL_ESCAPES.get(t.value, t.value[1])
-            t.type = 'ID'
-            t.value = TokenValue(t)
-            t.value.value = ch
+            elif ch is not None and ch not in _NOT_OPERAND:
+                lbp, rbp = _CONCAT
+                if lbp < min_bp:
+                    break
+                lhs = regex.RegexConcat(lhs, self._expr(rbp))
 
-        return t
-
-    def t_class_MINUS(self, t):
-        r'-'
-    
-        # Position in scanned class so far
-        pos = len(self.ID_scan)
-    
-        # If '-' is first character (or after '^'), it's literal
-        if pos == 0 or (pos == 1 and self.ID_scan[0] == '^'):
-            t.type = 'ID'
-        else:
-            # Peek next character to see if we're right before ']'
-            nxt = t.lexer.lexdata[t.lexer.lexpos:t.lexer.lexpos+1]
-    
-            if nxt == ']':
-                # '-' at end of class is literal
-                t.type = 'ID'
             else:
-                # Otherwise it's a range operator
-                t.type = 'MINUS'
-    
-        self.ID_scan.append(t.value)
-        t.value = TokenValue(t)
-        return t
+                break
 
-    def t_class_ID(self, t):
-        r'.'
-    
-        self.ID_scan.append(t.value)
-    
-        if t.value == '^' and len(self.ID_scan) == 1:
-            t.type = 'CARET'
-    
-        if t.value == ']':
-            if self.ID_scan == [']'] or self.ID_scan == ['^', ']']:
-                pass
+        return lhs
+
+    def _operand(self):
+        """
+        Parse what can begin an operand: an atom, or ~ and its operand.
+        """
+        ch = self._peek()
+
+        if ch is None:
+            self._error('unexpected end of pattern')
+
+        if ch in _POSTFIX_OPS:
+            self._error('nothing to repeat')
+
+        if ch in _NOT_OPERAND and ch != '-':
+            self._error(f'missing operand before {ch!r}')
+
+        start = self.pos
+        self._advance()
+
+        if ch == '~':
+            self._enter(start)
+            expr = regex.RegexNot(self._expr(_PREFIX))
+            self.depth -= 1
+            return expr
+
+        if ch == '(':
+            self._enter(start)
+            expr = self._group(start)
+            self.depth -= 1
+            return expr
+
+        if ch == '[':
+            return self._class(start)
+
+        if ch == '.':
+            return regex.RegexDot()
+
+        if ch == 'ε':
+            return regex.RegexEpsilon()
+
+        if ch == '\\':
+            esc = self._escape(start)
+            if esc in _SETS:
+                mask, negate = _SETS[esc]
+                return regex.RegexSym(mask, negate=negate)
+            return regex.RegexSym(_CONTROL_ESCAPES.get(esc, esc))
+
+        # Anything else, '-' included, is a literal
+        #
+        return regex.RegexSym(ch)
+
+    def _postfix(self, expr):
+        """ Apply one of * + ? {m,n} to expr. """
+        start = self.pos
+        ch = self._advance()
+
+        if ch == '*':
+            return regex.RegexStar(expr)
+        if ch == '+':
+            return regex.RegexPlus(expr)
+        if ch == '?':
+            return regex.RegexOpt(expr)
+
+        return self._repeat(expr, self._repeat_spec(start))
+
+    # Sub-parsers
+    #
+    def _group(self, start):
+        """
+        After '('. The group id is taken before the body is parsed, so ids
+        are handed out in left-to-right order of '('.
+        """
+        name = None
+
+        if self._peek() == '?':
+            self._advance()
+            ch = self._peek()
+
+            if ch == ':':
+                self._advance()
+                body = self._group_body(start)
+                return regex.RegexExpr(body)
+
+            if ch == 'P':
+                self._advance()
+                ch = self._peek()
+
+            if ch != '<':
+                self._error('unknown extension after (?')
+
+            self._advance()
+            name = self._group_name()
+
+        gid = next(_group_ids)
+        body = self._group_body(start)
+
+        open_ = regex.RegexMarker(events=(event.Event(event.OPEN, gid, name),))
+        close = regex.RegexMarker(events=(event.Event(event.CLOSE, gid),))
+
+        return regex.RegexConcat(
+            regex.RegexConcat(open_, regex.RegexExpr(body)), close)
+
+    def _group_body(self, start):
+        if self._peek() == ')':
+            self._error('empty group')
+
+        body = self._expr(0)
+
+        if self._peek() != ')':
+            self._error('missing ), unterminated subpattern', start)
+        self._advance()
+
+        return body
+
+    def _group_name(self):
+        """ After '(?P<' or '(?<'. Reads name '>' and returns the name. """
+        self._peek()
+        start = self.pos
+
+        if self.pos >= len(self.text) or self.text[self.pos] not in _NAME_START:
+            self._error('missing or bad group name')
+
+        while self.pos < len(self.text) and self.text[self.pos] in _NAME_CHARS:
+            self.pos += 1
+
+        name = self.text[start:self.pos]
+
+        if self._peek() != '>':
+            self._error('missing > after group name')
+        self._advance()
+
+        return name
+
+    def _class(self, start):
+        """
+        After '['. Whitespace is significant inside a class, as in Python's
+        re.X, so this reads characters directly rather than through _peek.
+
+          - a leading '^' negates the class
+          - ']' first, or right after '^', is literal
+          - '-' first, right after '^', or right before ']' is literal;
+            anywhere else it must sit between two single characters
+          - \\d \\w \\s and their negations add whole sets
+        """
+        text = self.text
+        negate = False
+
+        if text.startswith('^', self.pos):
+            negate = True
+            self.pos += 1
+
+        first = self.pos
+        mask = 0
+
+        while True:
+            if self.pos >= len(text):
+                self._error('unterminated character set', start)
+
+            if text[self.pos] == ']' and self.pos != first:
+                self.pos += 1
+                break
+
+            item_start = self.pos
+
+            if (text[self.pos] == '-' and self.pos != first
+                    and not text.startswith(']', self.pos + 1)):
+                self._error('bad character range')
+
+            lo = self._class_item(start)
+
+            if isinstance(lo, int):
+                mask |= lo
+                continue
+
+            # A range needs a '-' that is not right before ']'
+            #
+            if (text.startswith('-', self.pos)
+                    and self.pos + 1 < len(text) and text[self.pos + 1] != ']'):
+                self.pos += 1
+                hi = self._class_item(start)
+
+                if isinstance(hi, int):
+                    self._error('bad character range', item_start)
+                if ord(lo) > ord(hi):
+                    self._error(f'bad character range {lo}-{hi}', item_start)
+
+                for code in range(ord(lo), ord(hi) + 1):
+                    mask |= 1 << code
             else:
-                t.lexer.begin('INITIAL')
-                t.type = 'RSQUARE'
-    
-        t.value = TokenValue(t)
-        return t
+                mask |= 1 << ord(lo)
 
-    def t_ID(self, t):
-        r'.'
-        t.value = TokenValue(t)
-        return t
+        return regex.RegexSym(mask, negate=negate)
 
-    precedence = (
-        ('left', 'OR', 'CARET', 'MINUS'),
-        ('left', 'AND'),
-        ('right', 'NOT'),
-        ('left', 'CONCAT'),
-    )
+    def _class_item(self, start):
+        """
+        One class member: a character (str), or a set's mask (int) for
+        \\d \\w \\s and their negations.
+        """
+        if self.pos >= len(self.text):
+            self._error('unterminated character set', start)
 
-    def p_expr_and(self, p):
-        'expression : expression AND expression'
-        p[0] = regex.RegexAnd(p[1], p[3], **p[2].kwds)
+        ch = self.text[self.pos]
+        self.pos += 1
 
-    def p_expr_or(self, p):
-        'expression : expression OR expression'
-        p[0] = regex.RegexOr(p[1], p[3], **p[2].kwds)
+        if ch != '\\':
+            return ch
 
-    def p_expr_diff(self, p):
-        'expression : expression MINUS expression'
-        p[0] = regex.RegexDiff(p[1], p[3], **p[2].kwds)
+        esc = self._escape(self.pos - 1)
 
-    def p_expr_xor(self, p):
-        'expression : expression CARET expression'
-        p[0] = regex.RegexXor(p[1], p[3], **p[2].kwds)
+        if esc in _SETS:
+            mask, negate = _SETS[esc]
+            return (regex.CHARSET_MAX - 1) ^ mask if negate else mask
 
-    def p_expr_concat(self, p):
-        'expression : concat %prec CONCAT'
-        p[0] = p[1]
+        return _CONTROL_ESCAPES.get(esc, esc)
 
-    def p_concat_list(self, p):
-        'concat : concat primary'
-        p[0] = regex.RegexConcat(p[1], p[2])
+    def _escape(self, start):
+        """ After '\\'. Returns the escaped character, taken as is. """
+        if self.pos >= len(self.text):
+            self._error('bad escape (end of pattern)', start)
 
-    def p_concat_primary(self, p):
-        'concat : primary'
-        p[0] = p[1]
+        ch = self.text[self.pos]
+        self.pos += 1
+        return ch
 
-    def p_primary_not(self, p):
-        'primary : NOT primary'
-        p[0] = regex.RegexNot(p[2], **p[1].kwds)
+    def _repeat_spec(self, start):
+        """
+        After '{'. Returns n, (m, None), (None, n) or (m, n). Whitespace is
+        allowed around the numbers.
+        """
+        lo = self._integer()
+        hi = None
+        comma = False
 
+        if self._peek() == ',':
+            self._advance()
+            comma = True
+            hi = self._integer()
 
-    def p_primary_star(self, p):
-        'primary : primary STAR'
-        p[0] = regex.RegexStar(p[1], **p[2].kwds)
+        if self._peek() != '}':
+            self._error('missing }, unterminated repeat', start)
+        self._advance()
 
-    def p_primary_plus(self, p):
-        'primary : primary PLUS'
-        p[0] = regex.RegexPlus(p[1])
+        if lo is None and hi is None:
+            self._error('missing repeat count', start)
 
-    def p_primary_opt(self, p):
-        'primary : primary QMARK'
-        p[0] = regex.RegexOpt(p[1], **p[2].kwds)
+        if not comma:
+            return lo
 
-    def p_primary_repeat(self, p):
-        'primary : primary LCURLY rspec RCURLY'
+        if lo is not None and hi is not None and lo > hi:
+            self._error('min repeat greater than max repeat', start)
+
+        return (lo, hi)
+
+    def _integer(self):
+        if self._peek() not in _DIGITS:
+            return None
+
+        start = self.pos
+        while self.pos < len(self.text) and self.text[self.pos] in _DIGITS:
+            self.pos += 1
+
+        return int(self.text[start:self.pos])
+
+    @staticmethod
+    def _repeat(expr, spec):
+        """ Expand r{...} into concatenations and alternations. """
 
         # Generate a concatenation of an expression num times
         #
@@ -398,233 +459,70 @@ class Parser:
 
             return cat
 
-        if isinstance(p[3], int):
-            p[0] = make_cat(p[1], p[3])
+        if isinstance(spec, int):
+            return make_cat(expr, spec)
 
-        elif isinstance(p[3], tuple):
-            lo, hi = p[3]
-        
-            # {,n}  →  0..n
-            if lo is None and hi is not None:
-                p[0] = regex.RegexEpsilon()
-                for k in range(1, hi + 1):
-                    cat = make_cat(p[1], k)
-                    p[0] = regex.RegexOr(p[0], cat)
-        
-            # {0,}  →  0..∞  ==  r*
-            elif lo == 0 and hi is None:
-                p[0] = regex.RegexStar(p[1])
-        
-            # {m,} with m > 0  →  r^m r*
-            elif lo is not None and hi is None:
-                base = make_cat(p[1], lo)
-                p[0] = regex.RegexConcat(base, regex.RegexStar(p[1]))
-        
-            # {m,n} with finite bounds
+        lo, hi = spec
+
+        # {,n}  →  0..n
+        #
+        if lo is None:
+            out = regex.RegexEpsilon()
+            for k in range(1, hi + 1):
+                out = regex.RegexOr(out, make_cat(expr, k))
+            return out
+
+        # {0,}  →  0..∞  ==  r*
+        #
+        if lo == 0 and hi is None:
+            return regex.RegexStar(expr)
+
+        # {m,} with m > 0  →  r^m r*
+        #
+        if hi is None:
+            return regex.RegexConcat(make_cat(expr, lo), regex.RegexStar(expr))
+
+        # {m,n} with finite bounds
+        #
+        out = None
+        for k in range(lo, hi + 1):
+            cat = regex.RegexEpsilon() if k == 0 else make_cat(expr, k)
+            out = cat if out is None else regex.RegexOr(out, cat)
+
+        return out
+
+    # Scanning
+    #
+    def _peek(self):
+        """
+        Skip whitespace and # comments, then return the next character, or
+        None at the end. Not used inside a character class.
+        """
+        text = self.text
+        n = len(text)
+
+        while self.pos < n:
+            ch = text[self.pos]
+            if ch in _WHITESPACE:
+                self.pos += 1
+            elif ch == '#':
+                end = text.find('\n', self.pos)
+                self.pos = n if end < 0 else end
             else:
-                p[0] = None
-                for k in range(lo, hi + 1):
-                    if k == 0:
-                        cat = regex.RegexEpsilon()
-                    else:
-                        cat = make_cat(p[1], k)
+                return ch
 
-                    if p[0] is None:
-                        p[0] = cat
-                    else:
-                        p[0] = regex.RegexOr(p[0], cat)
+        return None
 
-    _DIGIT_MASK = 0
-    for code in range(ord('0'), ord('9') + 1):
-        _DIGIT_MASK |= 1 << code
+    def _advance(self):
+        """ Consume and return the character _peek() just returned. """
+        ch = self.text[self.pos]
+        self.pos += 1
+        return ch
 
-    def p_primary_digits(self, p):
-        'primary : DIGIT'
+    def _enter(self, start):
+        self.depth += 1
+        if self.depth > _MAX_DEPTH:
+            self._error(f'too deeply nested (limit {_MAX_DEPTH})', start)
 
-        p[0] = regex.RegexSym(Parser._DIGIT_MASK, **p[1].kwds)
-
-    def p_primary_notdigit(self, p):
-        'primary : NOTDIGIT'
-
-        p[0] = regex.RegexSym(Parser._DIGIT_MASK, negate=True, **p[1].kwds)
-
-    _SPACE_MASK = 0
-    for ch in (' ', '\t', '\n', '\r', '\v', '\f'):
-        _SPACE_MASK |= 1 << ord(ch)
-
-    _WORD_MASK = 0
-    for c in range(ord('A'), ord('Z') + 1):
-        _WORD_MASK |= 1 << c
-    for c in range(ord('a'), ord('z') + 1):
-        _WORD_MASK |= 1 << c
-    _WORD_MASK |= _DIGIT_MASK
-    _WORD_MASK |= 1 << ord('_')
-
-    def p_primary_word(self, p):
-        'primary : WORD'
-        p[0] = regex.RegexSym(Parser._WORD_MASK, **p[1].kwds)
-
-    def p_primary_notword(self, p):
-        'primary : NOTWORD'
-        p[0] = regex.RegexSym(Parser._WORD_MASK, negate=True, **p[1].kwds)
-
-    def p_primary_space(self, p):
-        'primary : SPACE'
-        
-        p[0] = regex.RegexSym(Parser._SPACE_MASK, **p[1].kwds)
-
-    def p_primary_notspace(self, p):
-        'primary : NOTSPACE'
-
-        p[0] = regex.RegexSym(Parser._SPACE_MASK, negate=True, **p[1].kwds)
-
-    def p_primary_id(self, p):
-        'primary : literal'
-        p[0] = p[1]
-
-    def p_primary_expr(self, p):
-        'primary : LPAREN expression RPAREN'
-
-        expr = regex.RegexExpr(p[2])
-        concat = regex.RegexConcat(regex.RegexMarker(**p[1].kwds), expr)
-
-        p[0] = regex.RegexConcat(concat, regex.RegexMarker(**p[3].kwds))
-
-    def p_primary_named_expr(self, p):
-        'primary : LPAREN_NAMED expression RPAREN'
-
-        expr = regex.RegexExpr(p[2])
-        concat = regex.RegexConcat(regex.RegexMarker(**p[1].kwds), expr)
-
-        p[0] = regex.RegexConcat(concat, regex.RegexMarker(**p[3].kwds))
-
-    def p_primary_no_capture_expr(self, p):
-        'primary : LPAREN_NOCAPTURE expression RPAREN'
-        p[0] = regex.RegexExpr(p[2], **p[1].kwds)
-
-    def p_primary_class(self, p):
-        'primary : LSQUARE opt_caret ranges RSQUARE'
-        negate = p[2]         # True if there was a '^', else False
-        items  = p[3]         # list of (char, kwds)
-
-        # Build a single bitmask for all characters in this class
-        #
-        mask = 0
-        for ch, _kwds in items:
-            mask |= 1 << ord(ch)
-
-        # Reuse the kwds from the first item (escape flags etc.)
-        #
-        kwds = items[0][1] if items else {}
-
-        # One RegexSym that represents the whole class, possibly negated
-        # 
-        p[0] = regex.RegexSym(mask, negate=negate, **kwds)
-
-    def p_class_inversion(self, p):
-        'opt_caret : CARET'
-        p[0] = True
-
-    def p_class_positive(self, p):
-        'opt_caret : '
-        p[0] = False
-
-    def p_ranges_list(self, p):
-        'ranges : ranges range'
-        p[0] = p[1] + p[2]
-
-    def p_ranges_init(self, p):
-        'ranges : range'
-        p[0] = p[1]
-
-    def p_range_literal(self, p):
-        'range : ID'
-        p[0] = [(p[1].value, p[1].kwds)]
-
-    def p_range_set(self, p):
-        'range : CLASS_SET'
-        mask = p[1].value
-        p[0] = [(chr(code), p[1].kwds) for code in range(256) if mask >> code & 1]
-
-    def p_range_span(self, p):
-        'range : ID MINUS ID'
-        p[0] = []
-
-        start = ord(p[1].value)
-        end   = ord(p[3].value)
-
-        if start <= end:
-            for code in range(start, end + 1):
-                p[0].append((chr(code), p[1].kwds))
-        else:
-            LOG.error('Error: Range %s-%s in non-increasing order', p[1].value,
-                p[3].value)
-            self.errors += 1
-
-    def p_literal_dot(self, p):
-        'literal : DOT'
-        p[0] = regex.RegexDot(**p[1].kwds)
-
-    def p_literal_id(self, p):
-        'literal : ID'
-        p[0] = regex.RegexSym(p[1].value, **p[1].kwds)
-
-    def p_literal_minus(self, p):
-        'literal : MINUS'
-        p[0] = regex.RegexSym(p[1].value, **p[1].kwds)
-
-    _CONTROL_ESCAPES = {
-        '\\a': '\a',
-        '\\b': '\b',
-        '\\t': '\t',
-        '\\n': '\n',
-        '\\v': '\v',
-        '\\f': '\f',
-        '\\r': '\r',
-    }
-
-    _CLASS_SETS = {
-        '\\d': (_DIGIT_MASK, False),
-        '\\D': (_DIGIT_MASK, True),
-        '\\w': (_WORD_MASK, False),
-        '\\W': (_WORD_MASK, True),
-        '\\s': (_SPACE_MASK, False),
-        '\\S': (_SPACE_MASK, True),
-    }
-
-    def p_literal_escaped(self, p):
-        'literal : ESCAPED'
-
-        ch = Parser._CONTROL_ESCAPES.get(p[1].value, p[1].value[1])
-        p[0] = regex.RegexSym(ch, **p[1].kwds)
-
-    def p_literal_epsilon(self, p):
-        'literal : EPSILON'
-        p[0] = regex.RegexEpsilon()
-
-    def p_rspec_only(self, p):
-        'rspec : INTEGER'
-        p[0] = p[1]
-
-    def p_rspec_min(self, p):
-        'rspec : INTEGER COMMA'
-        p[0] = (p[1], None)
-
-    def p_rspec_max(self, p):
-        'rspec : COMMA INTEGER'
-        p[0] = (None, p[2])
-
-    def p_rspec_minmax(self, p):
-        'rspec : INTEGER COMMA INTEGER'
-        if p[1] > p[3]:
-            LOG.error('Error: Range %s-%s in non-increasing order', p[1], p[3])
-            self.errors += 1
-        p[0] = (p[1], p[3])
-
-    def p_error(self, p):
-        self.errors += 1
-
-        if (p):
-            LOG.error(f'{p.lineno}:{self.column(p)}: Syntax error at "{p.value.value}"')
-        else:
-            LOG.error('Syntax error at end of input')
+    def _error(self, msg, pos=None):
+        raise PatternError(msg, self.text, self.pos if pos is None else pos)

@@ -6,7 +6,8 @@ from typing import Dict, List, Tuple, Union
 
 from .dfa import compile as _compile_dfa, DFA
 from .regex import Regex
-from .parser import Parser
+from . import parser as _parser
+from .parser import PatternError
 
 Pattern = Union[str, Regex, DFA]
 Span = Tuple[int, int]
@@ -16,12 +17,9 @@ MatchResult = Dict[Union[int, str], List[Span]]
 def parse(pattern: str) -> Regex:
     """
     Parse a regex pattern string into a Regex AST node.
+    Raises PatternError, a ValueError, if the pattern is invalid.
     """
-    parser = Parser()
-    expr = parser.parse(pattern)
-    if parser.errors or expr is None:
-        raise ValueError(f'Invalid regex pattern: {repr(pattern)}')
-    return expr
+    return _parser.parse(pattern)
 
 
 def _to_regex(pattern: Pattern) -> Regex:
@@ -73,5 +71,5 @@ __all__ = [
     'isempty',
     'equal',
     'subset',
-    'Parser',
+    'PatternError',
 ]

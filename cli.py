@@ -84,4 +84,8 @@ def main(argv=None):
 
             print(groups)
     else:
-        print(compile(args.regex))
+        try:
+            print(compile(args.regex))
+        except ValueError as e:
+            LOG.error(e)
+            return 1

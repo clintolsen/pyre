@@ -9,7 +9,6 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from pyre import Parser
 import pyre
 
 class RegexTestCase(unittest.TestCase):
@@ -19,13 +18,7 @@ class RegexTestCase(unittest.TestCase):
     """
 
     def compile(self, pattern):
-        parser = Parser()
-        expr = parser.parse(pattern)
-        self.assertEqual(
-            parser.errors, 0,
-            msg=f"Parser reported errors for: {pattern}"
-        )
-        return expr
+        return pyre.parse(pattern)
 
     def fullmatch(self, pattern, text):
         result = pyre.fullmatch(pattern, text)

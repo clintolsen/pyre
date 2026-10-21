@@ -20,7 +20,7 @@ derivatives in Pike VM style, so it never backtracks either.
 
 The project includes:
 
-- A lexer and parser written in PLY
+- A hand-written Pratt parser with no dependencies outside the standard library
 - A full AST of regular-expression operators
 - DFA construction using derivatives
 - Capture groups, including named groups
@@ -61,20 +61,7 @@ The project includes:
 
 ## Installation
 
-Requires **Python 3.9+** and **PLY**.
-
-### Installing PLY
-
-This project uses [PLY](https://www.dabeaz.com/ply/) (Python Lex–Yacc).
-PLY is no longer actively distributed via PyPI, so it is not installed as a
-package dependency. Instead, this project expects a local `ply/` directory
-containing the PLY sources.
-
-You can fetch a pinned version of PLY into `ply/` by running:
-
-```bash
-bash scripts/get_ply.sh
-```
+Requires **Python 3.9+**. There are no other dependencies.
 
 ---
 
@@ -271,14 +258,13 @@ languages only.
  ├── parser.py
  ├── pyre
  ├── regex.py
- ├── scripts
- │   └── get_ply.sh
  ├── test
  │   ├── __init__.py
  │   ├── test_basic.py
  │   ├── test_boolean.py
  │   ├── test_capture.py
  │   ├── test_common.py
+ │   ├── test_parser.py
  │   └── test_repeat.py
  └── util.py
 ```

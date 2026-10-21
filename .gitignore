@@ -1,4 +1,2 @@
 __pycache__/
-ply/
 test/*.cpp
-parser.out
