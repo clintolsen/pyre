@@ -30,7 +30,7 @@ def _to_regex(pattern: Pattern) -> Regex:
     if isinstance(pattern, Regex):
         return pattern
     if isinstance(pattern, DFA):
-        return pattern.initial.regex
+        return pattern.expr
     raise TypeError(f'expected str, Regex, or DFA, got {type(pattern).__name__}')
 
 

@@ -29,9 +29,17 @@ class Goto:
 
 class DFA:
     def __init__(self, expr):
-        self.states = set()
-        self.initial = DFAState(expr)
+        # The DFA only decides whether text matches and where a match ends,
+        # which capture markers never affect, so it is built from the
+        # expression with captures stripped. That keeps it smaller, and lets
+        # alternatives intern commutatively. The capture pass runs on the
+        # original expression, where operand order sets group numbering and
+        # branch priority.
+        #
+        self.expr = expr
         self.group_numbers = capture.group_numbers(expr)
+        self.states = set()
+        self.initial = DFAState(expr._without_captures())
 
         todo = {self.initial}
 
@@ -178,7 +186,7 @@ class DFA:
         if not self.group_numbers:
             return {0: [(start, end)]}
 
-        return capture.captures(self.initial.regex, text, start, end,
+        return capture.captures(self.expr, text, start, end,
                                 self.group_numbers)
 
     # Skip over known bad start characters

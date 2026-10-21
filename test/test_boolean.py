@@ -273,6 +273,13 @@ class TestBooleanOps(RegexTestCase):
 
         self.assertEqual(pyre.fullmatch(b | a, "a"), pyre.fullmatch("(b)|(a)", "a"))
 
+    def test_dfa_size_ignores_captures(self):
+        """The DFA is built without capture markers, so groups add no states."""
+        with_groups = pyre.compile("((a)|(b))*(c)")
+        without = pyre.compile("(?:a|b)*c")
+
+        self.assertEqual(len(with_groups.states), len(without.states))
+
     def test_isempty_helper(self):
         self.assertTrue(pyre.isempty("a & b"))
         self.assertFalse(pyre.isempty("a"))
