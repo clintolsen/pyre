@@ -50,6 +50,18 @@ class Regex:
 
             init(self)
 
+            # True if a capture marker appears anywhere below this node.
+            # Simplifications and interning that are fine for the language
+            # must not reorder or drop such terms.
+            #
+            self.hascaptures = self.ismarker or any(
+                child.hascaptures
+                for child in (getattr(self, 'left', None),
+                              getattr(self, 'right', None),
+                              getattr(self, 'expr', None))
+                if child is not None
+            )
+
             Regex._instance[key] = self
             return self
 
@@ -216,6 +228,17 @@ class Regex:
 
 
     @staticmethod
+    def unique(args):
+        ''' Drop repeated arguments, keeping the first occurrence of each in order '''
+        seen = set()
+        out = []
+        for arg in args:
+            if arg not in seen:
+                seen.add(arg)
+                out.append(arg)
+        return out
+
+    @staticmethod
     def get_args(expr, expr_type):
         ''' Gather all the arguments for an expression reaching down to sub-expressions '''
         args = []
@@ -355,7 +378,10 @@ class RegexOr(Regex):
         # 4) ¬∅ + r ≈ ¬∅
         #    r + ¬∅ ≈ ¬∅
         #
-        if left.isany or right.isany:
+        # A capturing r on the left still has priority over ¬∅ on the
+        # right, so (a)|.* must keep reporting group 1 for "a".
+        #
+        if left.isany or (right.isany and not left.hascaptures):
             return RegexNot(RegexEmpty())
 
         # 5) ∅ + r ≈ r
@@ -371,17 +397,28 @@ class RegexOr(Regex):
         if left is right:
             return left
 
-        args_l = set(Regex.get_args(left, RegexOr))
-        args_r = set(Regex.get_args(right, RegexOr))
-        if args_r <= args_l:
-            return left
-        if args_l <= args_r:
-            return right
+        args_l = Regex.get_args(left, RegexOr)
+        args_r = Regex.get_args(right, RegexOr)
+        args_u = Regex.unique(args_l + args_r)
 
-        # 2) r + s ≈ s + r
+        # Alternatives with capture groups are ordered: the left one numbers
+        # its groups first and wins when both match. Everything else stays
+        # commutative so DFA states still treat r + s and s + r as one.
         #
-        args_u = args_l | args_r
-        key = (cls, frozenset(args_u), frozenset(kwargs.items()))
+        ordered = left.hascaptures or right.hascaptures
+
+        if set(args_r) <= set(args_l):
+            return left
+        if set(args_l) <= set(args_r):
+            if not ordered or args_u == Regex.unique(args_r):
+                return right
+
+        # 2) r + s ≈ s + r, unless captures make order matter
+        #
+        if ordered:
+            key = (cls, tuple(args_u), frozenset(kwargs.items()))
+        else:
+            key = (cls, frozenset(args_u), frozenset(kwargs.items()))
 
         def init(self):
             self.left = left
@@ -430,7 +467,13 @@ class RegexXor(Regex):
         if right.isempty:
             return left
 
-        key = (cls, frozenset((left, right)), frozenset(kwargs.items()))
+        # Only one side can match, so order never sets priority, but it
+        # still sets group numbering when either side has captures.
+        #
+        if left.hascaptures or right.hascaptures:
+            key = (cls, (left, right), frozenset(kwargs.items()))
+        else:
+            key = (cls, frozenset((left, right)), frozenset(kwargs.items()))
 
         def init(self):
             self.left = left
@@ -481,15 +524,25 @@ class RegexAnd(Regex):
         if left is right:
             return left
 
-        args_l = set(Regex.get_args(left, RegexAnd))
-        args_r = set(Regex.get_args(right, RegexAnd))
-        if args_r <= args_l:
-            return left
-        if args_l <= args_r:
-            return right
+        args_l = Regex.get_args(left, RegexAnd)
+        args_r = Regex.get_args(right, RegexAnd)
+        args_u = Regex.unique(args_l + args_r)
 
-        args_u = args_l | args_r
-        key = (cls, frozenset(args_u), frozenset(kwargs.items()))
+        # Both sides report captures, so order only sets group numbering,
+        # but that still has to follow the operands as written.
+        #
+        ordered = left.hascaptures or right.hascaptures
+
+        if set(args_r) <= set(args_l):
+            return left
+        if set(args_l) <= set(args_r):
+            if not ordered or args_u == Regex.unique(args_r):
+                return right
+
+        if ordered:
+            key = (cls, tuple(args_u), frozenset(kwargs.items()))
+        else:
+            key = (cls, frozenset(args_u), frozenset(kwargs.items()))
 
         def init(self):
             self.left = left

@@ -260,18 +260,35 @@ class TestBooleanOps(RegexTestCase):
         self.assertTrue(pyre.equal(pyre.parse("(a)|(b)"), pyre.parse("a|b")))
         self.assertTrue(pyre.subset(pyre.parse("(a)"), pyre.parse("(b)|(a)")))
 
-    @unittest.expectedFailure
     def test_composition_order_is_kept_for_reversed_operands(self):
         """
-        Known issue: RegexOr is interned as a commutative set, so once a | b
-        exists, b | a returns the same node with a still on the left. Group
-        numbering and branch priority then follow the first order built.
+        Building a OP b first must not change b OP a. Alternatives are
+        interned commutatively, which is right for the language but not for
+        group numbering or branch priority.
         """
-        a = pyre.parse("(a)")
-        b = pyre.parse("(b)")
-        pyre.compile(a | b)
+        import operator
 
-        self.assertEqual(pyre.fullmatch(b | a, "a"), pyre.fullmatch("(b)|(a)", "a"))
+        cases = [
+            ("|", operator.or_,  "(a.)", "(.b)", ("ab", "ac", "cb")),
+            ("&", operator.and_, "(a).", ".(b)", ("ab",)),
+            ("^", operator.xor,  "(a.)", "(.b)", ("ac", "cb")),
+        ]
+        for sym, fn, left, right, texts in cases:
+            a = pyre.parse(left)
+            b = pyre.parse(right)
+            pyre.compile(fn(a, b))
+
+            reversed_dfa = pyre.compile(fn(b, a))
+            together = pyre.compile(right + sym + left)
+            for s in texts:
+                with self.subTest(op=sym, text=s):
+                    self.assertEqual(reversed_dfa.fullmatch(s), together.fullmatch(s))
+
+    def test_alternation_with_match_anything_keeps_left_captures(self):
+        """(a)|.* still reports group 1; .*|(a) never does, since .* wins."""
+        self.assertEqual(pyre.fullmatch("(a)|.*", "a"), {0: [(0, 1)], 1: [(0, 1)]})
+        self.assertEqual(pyre.fullmatch("(a)|.*", "b"), {0: [(0, 1)]})
+        self.assertEqual(pyre.fullmatch(".*|(a)", "a"), {0: [(0, 1)]})
 
     def test_dfa_size_ignores_captures(self):
         """The DFA is built without capture markers, so groups add no states."""
