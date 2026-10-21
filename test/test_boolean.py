@@ -69,6 +69,19 @@ class TestBooleanOps(RegexTestCase):
         self.assertEqual(self.fullmatch("~a", "aa"), True)
         self.assertEqual(self.fullmatch("~a", "ab"), True)
 
+    def test_not_binds_looser_than_repeat(self):
+        # ~a*  =  ~(a*)  =  strings that are not all a's
+        for s, expected in [
+            ("", False),
+            ("a", False),
+            ("aaa", False),
+            ("b", True),
+            ("ab", True),
+            ("ba", True),
+        ]:
+            with self.subTest(s=s):
+                self.assertEqual(self.fullmatch("~a*", s), expected)
+
     def test_double_negation(self):
         # ~~a  ==  a
         self.assertEqual(self.fullmatch("~~a", "a"), True)

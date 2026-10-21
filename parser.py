@@ -33,8 +33,8 @@ _group_ids = itertools.count(1)
 #   | ^ -    set operators       a|b-c   is (a|b)-c
 #   &        intersection        a|b&c   is a|(b&c)
 #   ab       concatenation       ab&c    is (ab)&c
-#   * + ? {} postfix repeats     ab*     is a(b*)
-#   ~        complement          ~a*     is (~a)*
+#   ~        complement          ~ab     is (~a)b
+#   * + ? {} postfix repeats     ~a*     is ~(a*)
 #
 _INFIX = {
     '|': (10, 11, regex.RegexOr),
@@ -43,8 +43,8 @@ _INFIX = {
     '&': (20, 21, regex.RegexAnd),
 }
 _CONCAT = (30, 31)
+_PREFIX = 35
 _POSTFIX = 40
-_PREFIX = 50
 
 _POSTFIX_OPS = frozenset('*+?{')
 

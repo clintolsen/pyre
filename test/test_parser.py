@@ -36,7 +36,10 @@ class TestPrecedence(unittest.TestCase):
                       rx.RegexConcat(a, rx.RegexConcat(b, b)))
 
     def test_complement(self):
-        self.assertIs(pyre.parse('~a*'), rx.RegexStar(rx.RegexNot(a)))
+        self.assertIs(pyre.parse('~a*'), rx.RegexNot(rx.RegexStar(a)))
+        self.assertIs(pyre.parse('~a{2}'), rx.RegexNot(rx.RegexConcat(a, a)))
+        self.assertIs(pyre.parse('~a+b'),
+                      rx.RegexConcat(rx.RegexNot(rx.RegexPlus(a)), b))
         self.assertIs(pyre.parse('~ab'), rx.RegexConcat(rx.RegexNot(a), b))
         self.assertIs(pyre.parse('a~b'), rx.RegexConcat(a, rx.RegexNot(b)))
         self.assertIs(pyre.parse('~a|b'), rx.RegexOr(rx.RegexNot(a), b))

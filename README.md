@@ -237,6 +237,22 @@ matched: the excluded side of `-`, the whole of `~`, and the losing side of
 `^` never report. `pyre.equal()` and `pyre.subset()` ignore groups and compare
 languages only.
 
+### Operator Precedence
+
+From loosest to tightest binding:
+
+| Operators | Meaning | Example |
+|---|---|---|
+| `\|` `^` `-` | union, symmetric difference, difference | `a\|b-a` is `(a\|b)-a` |
+| `&` | intersection | `a\|.&b` is `a\|(.&b)` |
+| (adjacent) | concatenation | `ab&a.` is `(ab)&(a.)` |
+| `~` | complement | `~ab` is `(~a)b` |
+| `*` `+` `?` `{m,n}` | repetition | `~a*` is `~(a*)` |
+
+Binary operators group left to right. `^` is symmetric difference, not a
+start anchor. `-` is a literal wherever an operand begins, so `-a` matches
+"-a" and `a|-b` matches "a" or "-b". When in doubt, group with `(?:...)`.
+
 ---
 
 ## Project Structure
