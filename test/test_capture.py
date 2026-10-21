@@ -140,5 +140,13 @@ class TestCaptureGroups(RegexTestCase):
 
         self.assertEqual(result, {0: [(0, 3)]})
 
+    def test_group_names_do_not_leak_between_patterns(self):
+        """A group name belongs to its own pattern, not to a same-numbered group elsewhere."""
+        pyre.compile("(?P<OTHER>x)")
+        pyre.compile("(x)")
+
+        self.assertEqual(pyre.fullmatch("(?P<ID>a)", "a"),
+                         {0: [(0, 1)], 1: [(0, 1)], "ID": [(0, 1)]})
+
 if __name__ == "__main__":
     unittest.main()

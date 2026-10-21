@@ -15,8 +15,11 @@ class Event:
     def __repr__(self):
         return f"Event({names[self.kind]} {self.gid}{'' if not self.name else ' ' + self.name})"
 
+    # The name is part of identity: markers are interned by their events, so
+    # ignoring it would let one pattern's group name leak into another's.
+    #
     def __eq__(self, other):
-        return self.kind == other.kind and self.gid == other.gid
+        return (self.kind, self.gid, self.name) == (other.kind, other.gid, other.name)
 
     def __hash__(self):
-        return hash((self.kind, self.gid))
+        return hash((self.kind, self.gid, self.name))
