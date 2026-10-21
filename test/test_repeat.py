@@ -31,6 +31,12 @@ class TestRepeat(RegexTestCase):
         self.assert_fullmatch_same_as_re("(ab){2}", "abab")
         self.assert_fullmatch_same_as_re("(ab){2}", "ababab")
 
+    def test_zero_repeat(self):
+        # a{0} and a{0,0} match only the empty string
+        for pattern in ["a{0}", "a{0,0}", "ba{0}c"]:
+            for s in ["", "a", "bc", "bac"]:
+                self.assert_fullmatch_same_as_re(pattern, s)
+
     def test_bounded_repeat_literal(self):
         # a{2,4}
         pattern = "a{2,4}"

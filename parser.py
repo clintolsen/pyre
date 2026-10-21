@@ -453,6 +453,9 @@ class _Parser:
         # Generate a concatenation of an expression num times
         #
         def make_cat(expr, num):
+            if num == 0:
+                return regex.RegexEpsilon()
+
             cat = expr
             for _ in range(num - 1):
                 cat = regex.RegexConcat(cat, expr)
@@ -486,7 +489,7 @@ class _Parser:
         #
         out = None
         for k in range(lo, hi + 1):
-            cat = regex.RegexEpsilon() if k == 0 else make_cat(expr, k)
+            cat = make_cat(expr, k)
             out = cat if out is None else regex.RegexOr(out, cat)
 
         return out
