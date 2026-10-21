@@ -48,7 +48,7 @@ class DFA:
             current.name = f'q{len(self.states)}'
             self.states.add(current)
 
-            LOG.debug(f'Current state {current.name}: {current}')
+            LOG.debug('Current state %s: %s', current.name, current)
 
             classes = current.regex.charset.get_int_sets()
 
@@ -58,8 +58,8 @@ class DFA:
 
                     _next = DFAState(current.regex.derive(char))
 
-                    LOG.debug(f'Derivative of {current.name} of {repr(char)} => {_next}')
-                    LOG.debug(f'Transition for {[regex.CharSet._fmt_char(x) for x in charset[0]]}')
+                    LOG.debug('Derivative of %s of %r => %s', current.name, char, _next)
+                    LOG.debug('Transition for %s', [regex.CharSet._fmt_char(x) for x in charset[0]])
 
                     goto = Goto(_next)
 
@@ -88,8 +88,8 @@ class DFA:
                     goto = state.goto[lsb_pos]
                     print(f"    {regex.CharSet.fmt_mask(mask)} {goto}")
 
-        LOG.debug('Total DFA states: %d' % len(self.states))
-        LOG.debug('Total RE instances: %d' % len(regex.Regex._instance))
+        LOG.debug('Total DFA states: %d', len(self.states))
+        LOG.debug('Total RE instances: %d', len(regex.Regex._instance))
 
 
     def run(self, text, index=0):
@@ -129,13 +129,13 @@ class DFA:
                 {group_id: [(start, end), ...]}
             where start/end are 0-based indices into `text`, end-exclusive.
         """
-        LOG.debug(f'Match: {self.initial} against {text}')
+        LOG.debug('Match: %s against %s', self.initial, text)
 
         state = self.initial
 
         for step in self.run(text):
             state = step.state
-            LOG.debug(f'Match: Step {step}')
+            LOG.debug('Match: Step %s', step)
 
             # Dead state
             #
