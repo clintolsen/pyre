@@ -29,6 +29,61 @@ class Goto:
         return f'{self}'
 
 
+class _Text:
+    """
+    Text as the DFA reads it. Patterns match code points, but the DFA steps
+    through UTF-8 bytes, so data holds one byte per character of a str
+    decoded as Latin-1, and each character indexes a 256-entry transition
+    table. Offsets into data are byte offsets, and index() maps them back
+    to offsets into the text given, a str or bytes. Only a str that is not
+    all ASCII needs that; mapped says whether it does.
+    """
+    __slots__ = ('text', 'data', 'mapped', '_offsets')
+
+    def __init__(self, text):
+        self.text = text
+        self.mapped = False
+        self._offsets = None
+
+        if isinstance(text, str):
+            # ASCII is its own UTF-8
+            #
+            if text.isascii():
+                self.data = text
+            else:
+                self.data = text.encode('utf-8', 'surrogatepass').decode('latin-1')
+                self.mapped = True
+        elif isinstance(text, (bytes, bytearray, memoryview)):
+            self.data = bytes(text).decode('latin-1')
+        else:
+            raise TypeError(f'expected str or bytes, got {type(text).__name__}')
+
+    def index(self, offset):
+        """ The offset into text of the byte offset into data """
+        if not self.mapped:
+            return offset
+
+        if self._offsets is None:
+            offsets = [0] * (len(self.data) + 1)
+            pos = 0
+            for i, ch in enumerate(self.text):
+                offsets[pos] = i
+                pos += 1 if ch < '\x80' else 2 if ch < '\u0800' else 3 if ch < '\U00010000' else 4
+            offsets[pos] = len(self.text)
+            self._offsets = offsets
+
+        return self._offsets[offset]
+
+    def spans(self, groups):
+        """ groups, as match() returns them, with offsets into text """
+        if not self.mapped:
+            return groups
+
+        index = self.index
+        return {gid: [(index(start), index(end)) for start, end in intervals]
+                for gid, intervals in groups.items()}
+
+
 class DFA:
     def __init__(self, *exprs, names=None):
         # A state is a vector holding one derivative per expression, so it
@@ -63,25 +118,23 @@ class DFA:
 
             LOG.debug('Current state %s: %s', current.name, current)
 
-            classes = current.charset.get_int_sets()
+            for mask in sorted(current.charset.masks):
+                ranges = regex.mask_ranges(mask)
+                char = chr(ranges[0][0])
 
-            for charset in classes:
-                if charset:
-                    char = chr(charset[0][0])
+                _next = DFAState(tuple(r.derive(char) for r in current.vector))
 
-                    _next = DFAState(tuple(r.derive(char) for r in current.vector))
+                LOG.debug('Derivative of %s of %r => %s', current.name, char, _next)
+                LOG.debug('Transition for %s', regex.CharSet.fmt_mask(mask))
 
-                    LOG.debug('Derivative of %s of %r => %s', current.name, char, _next)
-                    LOG.debug('Transition for %s', [regex.CharSet._fmt_char(x) for x in charset[0]])
+                goto = Goto(_next)
 
-                    goto = Goto(_next)
+                for lo, hi in ranges:
+                    for code in range(lo, hi + 1):
+                        current.goto[code] = goto
 
-                    for rng in charset:
-                        for code in range(rng[0], rng[-1] + 1):
-                            current.goto[code] = goto
-
-                    if _next not in self.states:
-                        todo.add(_next)
+                if _next not in self.states:
+                    todo.add(_next)
 
         dead = DFAState.dead(len(exprs))
         self.states.add(dead)
@@ -112,7 +165,8 @@ class DFA:
 
     def run(self, text, index=0):
         """
-        Iterate over `text[index:]`.
+        Iterate over `text[index:]`, where text is as the DFA reads it: one
+        byte per character (see _Text).
 
         Yields DFAStep(index, char, prev_state, state, goto)
         where:
@@ -149,9 +203,11 @@ class DFA:
         """
         LOG.debug('Match: %s against %s', self.initial, text)
 
+        text = _Text(text)
+        data = text.data
         state = self.initial
 
-        for step in self.run(text):
+        for step in self.run(data):
             state = step.state
             LOG.debug('Match: Step %s', step)
 
@@ -163,12 +219,13 @@ class DFA:
         if state.accept is None:
             return {}
 
-        return self._groups(text, 0, len(text), state.accept)
+        return text.spans(self._groups(data, 0, len(data), state.accept))
 
 
     def match(self, text, *, greedy=True):
-        _, groups = self._run_from(text, 0, greedy=greedy)
-        return groups
+        text = _Text(text)
+        _, groups = self._run_from(text.data, 0, greedy=greedy)
+        return text.spans(groups)
 
 
     def _run_from(self, text, offset, *, greedy=True):
@@ -242,26 +299,32 @@ class DFA:
             - otherwise returns {group_id: [(start, end), ...]} where each
               (start, end) is one non-overlapping match for that group.
         """
-        n = len(text)
+        text = _Text(text)
+        data = text.data
+        n = len(data)
         offset = 0
 
+        # No match starts inside a character: every pattern matches whole
+        # characters, so the first transition on a continuation byte is
+        # dead and _skip steps over it.
+        #
         if not all:
             while offset < n:
-                offset = self._skip(text, offset)
+                offset = self._skip(data, offset)
                 if offset >= n:
                     break
-                end_index, groups = self._run_from(text, offset, greedy=greedy)
+                end_index, groups = self._run_from(data, offset, greedy=greedy)
                 if groups:
-                    return groups
+                    return text.spans(groups)
                 offset += 1
             return {}
 
         all_groups = {}
         while offset < n:
-            offset = self._skip(text, offset)
+            offset = self._skip(data, offset)
             if offset >= n:
                 break
-            end_index, groups = self._run_from(text, offset, greedy=greedy)
+            end_index, groups = self._run_from(data, offset, greedy=greedy)
             if not groups:
                 offset += 1
                 continue
@@ -269,7 +332,7 @@ class DFA:
                 all_groups.setdefault(gid, []).extend(intervals)
             offset = end_index
 
-        return all_groups
+        return text.spans(all_groups)
 
 
     def lex(self, text):
@@ -283,9 +346,11 @@ class DFA:
         single pattern names each token after the named group spanning it,
         which needs the capture pass on every token.
         """
+        text = _Text(text)
+        data = text.data
         index = 0
-        while index < len(text):
-            end, rule = self._end(text, index)
+        while index < len(data):
+            end, rule = self._end(data, index)
 
             if end is None:
                 break
@@ -293,7 +358,7 @@ class DFA:
             if self.names:
                 yield Token(self.names[rule], text, index, end, self, rule)
             else:
-                groups = self._groups(text, index, end, rule)
+                groups = self._groups(data, index, end, rule)
 
                 kind = None
                 for gid, intervals in groups.items():
@@ -306,7 +371,7 @@ class DFA:
                 if not kind:
                     break
 
-                yield Token(kind, text, index, end, self, rule, groups)
+                yield Token(kind, text, index, end, self, rule, text.spans(groups))
 
             index = end
 
@@ -318,19 +383,26 @@ class DFA:
 class Token:
     """
     A token from DFA.lex(). It unpacks like the tuple (kind, text, start,
-    end), where text is the matched string.
+    end), where text is the matched string, or bytes for bytes input.
 
     groups maps group numbers and names to spans, as match() does, and is
     computed the first time it is read.
     """
-    __slots__ = ('kind', 'text', 'start', 'end', '_source', '_dfa', '_rule', '_groups')
+    __slots__ = ('kind', 'text', 'start', 'end', '_input', '_byte_start', '_byte_end',
+                 '_dfa', '_rule', '_groups')
 
     def __init__(self, kind, source, start, end, dfa, rule, groups=None):
+        """ source is the _Text lexed, and start and end are byte offsets """
+        self._byte_start = start
+        self._byte_end = end
+        if source.mapped:
+            start, end = source.index(start), source.index(end)
+
         self.kind = kind
-        self.text = source[start:end]
         self.start = start
         self.end = end
-        self._source = source
+        self.text = source.text[start:end]
+        self._input = source
         self._dfa = dfa
         self._rule = rule
         self._groups = groups
@@ -338,7 +410,8 @@ class Token:
     @property
     def groups(self):
         if self._groups is None:
-            self._groups = self._dfa._groups(self._source, self.start, self.end, self._rule)
+            groups = self._dfa._groups(self._input.data, self._byte_start, self._byte_end, self._rule)
+            self._groups = self._input.spans(groups)
         return self._groups
 
     def group(self, gid=0):
@@ -347,7 +420,7 @@ class Token:
         if not intervals:
             return None
         start, end = intervals[0]
-        return self._source[start:end]
+        return self._input.text[start:end]
 
     def __iter__(self):
         return iter((self.kind, self.text, self.start, self.end))

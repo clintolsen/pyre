@@ -10,6 +10,7 @@ from . import parser as _parser
 from .parser import PatternError
 
 Pattern = Union[str, Regex, DFA]
+Text = Union[str, bytes]
 Span = Tuple[int, int]
 MatchResult = Dict[Union[int, str], List[Span]]
 
@@ -53,13 +54,13 @@ def lexer(rules: Iterable[Tuple[str, Pattern]]) -> DFA:
     return _lexer_dfa([name for name, _ in rules],
                       [_to_regex(pattern) for _, pattern in rules])
 
-def fullmatch(pattern: Pattern, string: str) -> MatchResult:
+def fullmatch(pattern: Pattern, string: Text) -> MatchResult:
     return compile(pattern).fullmatch(string)
 
-def match(pattern: Pattern, string: str) -> MatchResult:
+def match(pattern: Pattern, string: Text) -> MatchResult:
     return compile(pattern).match(string)
 
-def search(pattern: Pattern, string: str, *, all: bool = False, **kwargs) -> MatchResult:
+def search(pattern: Pattern, string: Text, *, all: bool = False, **kwargs) -> MatchResult:
     return compile(pattern).search(string, all=all, **kwargs)
 
 def isempty(pattern: Pattern) -> bool:

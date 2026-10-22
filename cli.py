@@ -60,7 +60,7 @@ def main(argv=None):
 
             LOG.debug(f'Groups: {groups}')
             flatten = [interval for group in groups.values() for interval in group]
-            intervals = regex.merge_intervals(flatten)
+            intervals = list(regex.merge_ranges(flatten, closed=False))
             LOG.debug(f'Merged intervals: {intervals}')
 
             i = 0

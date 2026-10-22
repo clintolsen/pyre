@@ -55,23 +55,12 @@ _NOT_OPERAND = frozenset('|^-&)*+?{')
 #
 _WHITESPACE = frozenset(' \t\n\r\v\f')
 
-_DIGIT_MASK = 0
-for code in range(ord('0'), ord('9') + 1):
-    _DIGIT_MASK |= 1 << code
-
-_SPACE_MASK = 0
-for ch in (' ', '\t', '\n', '\r', '\v', '\f'):
-    _SPACE_MASK |= 1 << ord(ch)
-
-_WORD_MASK = 0
-for code in range(ord('A'), ord('Z') + 1):
-    _WORD_MASK |= 1 << code
-for code in range(ord('a'), ord('z') + 1):
-    _WORD_MASK |= 1 << code
-_WORD_MASK |= _DIGIT_MASK
-_WORD_MASK |= 1 << ord('_')
-
-del code, ch
+# \d, \w and \s are ASCII only, as with Python's re.ASCII
+#
+_DIGIT_RANGES = ((ord('0'), ord('9')),)
+_SPACE_RANGES = regex.merge_ranges((ord(ch), ord(ch)) for ch in ' \t\n\r\v\f')
+_WORD_RANGES = regex.merge_ranges(_DIGIT_RANGES + (
+    (ord('A'), ord('Z')), (ord('a'), ord('z')), (ord('_'), ord('_'))))
 
 _CONTROL_ESCAPES = {
     'a': '\a',
@@ -83,15 +72,15 @@ _CONTROL_ESCAPES = {
     'r': '\r',
 }
 
-# \d, \w, \s and their negations: (mask, negate)
+# \d, \w, \s and their negations: (ranges, negate)
 #
 _SETS = {
-    'd': (_DIGIT_MASK, False),
-    'D': (_DIGIT_MASK, True),
-    'w': (_WORD_MASK, False),
-    'W': (_WORD_MASK, True),
-    's': (_SPACE_MASK, False),
-    'S': (_SPACE_MASK, True),
+    'd': (_DIGIT_RANGES, False),
+    'D': (_DIGIT_RANGES, True),
+    'w': (_WORD_RANGES, False),
+    'W': (_WORD_RANGES, True),
+    's': (_SPACE_RANGES, False),
+    'S': (_SPACE_RANGES, True),
 }
 
 _NAME_START = frozenset('abcdefghijklmnopqrstuvwxyz'
@@ -218,8 +207,8 @@ class _Parser:
         if ch == '\\':
             esc = self._escape(start)
             if esc in _SETS:
-                mask, negate = _SETS[esc]
-                return regex.RegexSym(mask, negate=negate)
+                ranges, negate = _SETS[esc]
+                return regex.RegexSym(ranges, negate=negate)
             return regex.RegexSym(_CONTROL_ESCAPES.get(esc, esc))
 
         # Anything else, '-' included, is a literal
@@ -326,7 +315,7 @@ class _Parser:
             self.pos += 1
 
         first = self.pos
-        mask = 0
+        ranges = []
 
         while True:
             if self.pos >= len(text):
@@ -344,8 +333,8 @@ class _Parser:
 
             lo = self._class_item(start)
 
-            if isinstance(lo, int):
-                mask |= lo
+            if not isinstance(lo, str):
+                ranges += lo
                 continue
 
             # A range needs a '-' that is not right before ']'
@@ -355,22 +344,21 @@ class _Parser:
                 self.pos += 1
                 hi = self._class_item(start)
 
-                if isinstance(hi, int):
+                if not isinstance(hi, str):
                     self._error('bad character range', item_start)
                 if ord(lo) > ord(hi):
                     self._error(f'bad character range {lo}-{hi}', item_start)
 
-                for code in range(ord(lo), ord(hi) + 1):
-                    mask |= 1 << code
+                ranges.append((ord(lo), ord(hi)))
             else:
-                mask |= 1 << ord(lo)
+                ranges.append((ord(lo), ord(lo)))
 
-        return regex.RegexSym(mask, negate=negate)
+        return regex.RegexSym(ranges, negate=negate)
 
     def _class_item(self, start):
         """
-        One class member: a character (str), or a set's mask (int) for
-        \\d \\w \\s and their negations.
+        One class member: a character (str), or a set's code point ranges
+        for \\d \\w \\s and their negations.
         """
         if self.pos >= len(self.text):
             self._error('unterminated character set', start)
@@ -384,8 +372,8 @@ class _Parser:
         esc = self._escape(self.pos - 1)
 
         if esc in _SETS:
-            mask, negate = _SETS[esc]
-            return (regex.CHARSET_MAX - 1) ^ mask if negate else mask
+            ranges, negate = _SETS[esc]
+            return regex.invert_ranges(ranges) if negate else ranges
 
         return _CONTROL_ESCAPES.get(esc, esc)
 

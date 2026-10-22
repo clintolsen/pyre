@@ -162,8 +162,10 @@ def _derive_branches(e, ch):
     if e.isempty or e.isepsilon or e.ismarker:
         return []
 
-    if isinstance(e, (rx.RegexSym, rx.RegexDot)):
-        return [((), rx.RegexEpsilon())] if not e.derive(ch).isempty else []
+    # A character's derivative is ε, or the rest of a longer character
+    #
+    if isinstance(e, (rx.RegexCodePoints, rx.RegexByte)):
+        return [((), e.derive(ch))]
 
     if isinstance(e, rx.RegexOr):
         return [branch for arg in e.args for branch in derive_branches(arg, ch)]
@@ -208,7 +210,7 @@ def _derive_branches(e, ch):
         return [(m, rx.RegexDiff(t, negated)) for m, t in derive_branches(e.left, ch)]
 
     if isinstance(e, rx.RegexNot):
-        return [((), rx.RegexNot(e.expr.derive(ch)))]
+        return [((), e.derive(ch))]
 
     if isinstance(e, rx.RegexXor):
         return (derive_branches(rx.RegexDiff(e.left, e.right), ch) +

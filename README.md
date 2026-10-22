@@ -27,6 +27,7 @@ The project includes:
 - `match()`, `fullmatch()` and `search()` APIs, plus `lexer()` for flex-style tokenizing
 - Set operators on parsed patterns, and `equal()`, `subset()` and `isempty()` language checks
 - Verbose patterns ala Python `re.X` with inline comments `#` allowed
+- Unicode patterns, matched against `str` or UTF-8 `bytes`
 - An example calculator app using lexer feature
 - A command-line interface called `pyre`
 
@@ -154,6 +155,31 @@ That has some serious `¯\_(ツ)_/¯` vibes.
 Use `\ ` (backslash-space) or `[ ]` to match a literal space, or `\s` for any
 whitespace character. As in Python's `re.X`, whitespace inside a character class
 is significant, and escapes such as `\t`, `\]` and `\d` work there too.
+
+---
+
+## Unicode
+
+Patterns match characters, so `.`, `[α-ω]` and `→` each match one character
+however many bytes it takes in UTF-8. Text can be a `str` or `bytes`:
+
+```python
+pyre.search("[α-ω]+", "x = λογος")          # {0: [(4, 9)]}
+pyre.search("[α-ω]+", "x = λογος".encode())  # {0: [(4, 14)]}
+```
+
+Spans count characters in a `str` and bytes in `bytes`. Bytes that aren't valid
+UTF-8 never match, and `.` matches any character, newline included. Lone
+surrogates count as characters, as they do in Python's `re`, so a filename
+decoded with `surrogateescape` still matches. `\d`, `\w` and `\s` are ASCII
+only, like `re.ASCII`.
+
+The complement `~r` matches the text that `r` doesn't, so it only ever matches
+whole characters too.
+
+Internally the DFA reads UTF-8 one byte at a time, so its transition tables
+stay 256 entries wide. A character class derives by a byte to the rest of each
+character that byte can start, which builds the UTF-8 automaton on demand.
 
 ---
 
@@ -304,8 +330,10 @@ start anchor. `-` is a literal wherever an operand begins, so `-a` matches
  │   ├── test_boolean.py
  │   ├── test_capture.py
  │   ├── test_common.py
+ │   ├── test_lexer.py
  │   ├── test_parser.py
- │   └── test_repeat.py
+ │   ├── test_repeat.py
+ │   └── test_unicode.py
  └── util.py
 ```
 

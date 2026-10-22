@@ -7,7 +7,14 @@ import logging
 
 LOG = logging.getLogger(__name__)
 
+# Patterns match code points, but the DFA reads UTF-8 bytes, so its alphabet
+# and character sets stay at 256. A class of code points derives by a byte
+# to the rest of each character it can start, and ~r is relative to valid
+# UTF-8, so every pattern matches only whole, valid characters. Surrogates
+# count as characters, as Python's 'surrogatepass' encodes them.
+#
 CHARSET_MAX = (1 << 256)
+MAX_CODE_POINT = 0x10FFFF
 
 # A derivative of an RE 'r' with respect to a character 'a' is:
 #
@@ -384,59 +391,256 @@ class RegexEpsilon(Regex):
     def __str__(self):
         return RegexEpsilon.sym
 
-class RegexSym(Regex):
+def merge_ranges(ranges, closed=True):
+    '''
+    Sorted, disjoint (lo, hi) ranges covering the same values. Ranges are
+    closed by default, so (1, 2) and (3, 4) merge; with closed=False they
+    are half-open spans, like match offsets, and merge only when they touch.
+    '''
+    gap = 1 if closed else 0
+    out = []
+    for lo, hi in sorted(ranges):
+        if out and lo <= out[-1][1] + gap:
+            if hi > out[-1][1]:
+                out[-1] = (out[-1][0], hi)
+        else:
+            out.append((lo, hi))
+    return tuple(out)
+
+
+def mask_ranges(mask):
+    ''' The set bits of mask as sorted, disjoint (lo, hi) ranges '''
+    out = []
+    lo = 0
+    while mask:
+        skip = (mask & -mask).bit_length() - 1
+        mask >>= skip
+        lo += skip
+        run = (~mask & (mask + 1)).bit_length() - 1
+        out.append((lo, lo + run - 1))
+        mask >>= run
+        lo += run
+    return tuple(out)
+
+
+def invert_ranges(ranges):
+    ''' The code points not in ranges, as sorted, disjoint ranges '''
+    out = []
+    start = 0
+    for lo, hi in merge_ranges(ranges):
+        if lo > start:
+            out.append((start, lo - 1))
+        start = hi + 1
+    if start <= MAX_CODE_POINT:
+        out.append((start, MAX_CODE_POINT))
+    return tuple(out)
+
+
+def _encode(code):
+    return chr(code).encode('utf-8', 'surrogatepass')
+
+
+def _byte_mask(lo, hi):
+    return ((1 << (hi + 1)) - 1) ^ ((1 << lo) - 1)
+
+
+def utf8_sequences(lo, hi):
+    '''
+    Split the code points lo..hi into runs whose UTF-8 encodings are all
+    the byte strings taking one byte from each of a list of ranges. Returns
+    the runs, lowest first, each as a tuple of (low, high) byte ranges, so
+    0x3B1..0x3C9 (α-ω) gives ((0xCE, 0xCE), (0xB1, 0xBF)) and
+    ((0xCF, 0xCF), (0x80, 0x89)).
+    '''
+    out = []
+    todo = [(lo, hi)]
+
+    while todo:
+        lo, hi = todo.pop()
+
+        # Encodings of different lengths go in separate runs
+        #
+        for top in (0x7F, 0x7FF, 0xFFFF):
+            if lo <= top < hi:
+                todo += [(top + 1, hi), (lo, top)]
+                break
+        else:
+            # Each byte after the first carries six bits, and has to range
+            # over all of them or stay fixed, so split wherever the bits
+            # below it would only partly wrap
+            #
+            for shift in (6, 12, 18):
+                low = (1 << shift) - 1
+                if lo & ~low == hi & ~low:
+                    continue
+                if lo & low:
+                    todo += [((lo | low) + 1, hi), (lo, lo | low)]
+                    break
+                if hi & low != low:
+                    todo += [(hi & ~low, hi), (lo, (hi & ~low) - 1)]
+                    break
+            else:
+                out.append(tuple(zip(_encode(lo), _encode(hi))))
+
+    return out
+
+
+# Characters printed with a backslash: outside a class, those the parser
+# reads as syntax; inside one, those it reads as class syntax
+#
+_SPECIAL = frozenset('\\.[](){}|^-&*+?~#ε')
+_CLASS_SPECIAL = frozenset('\\]-^')
+
+_NAMED_ESCAPES = {'\t': 't', '\n': 'n', '\r': 'r', '\v': 'v', '\f': 'f', '\a': 'a', ' ': ' '}
+
+
+def _fmt_code_point(code, special):
+    ch = chr(code)
+    if ch in _NAMED_ESCAPES:
+        return '\\' + _NAMED_ESCAPES[ch]
+    if ch in special:
+        return '\\' + ch
+    if ch.isprintable():
+        return ch
+    if code < 0x100:
+        return f'\\x{code:02x}'
+    if code < 0x10000:
+        return f'\\u{code:04x}'
+    return f'\\U{code:08x}'
+
+
+def _fmt_byte(code, special):
+    return _fmt_code_point(code, special) if code < 0x80 else f'\\x{code:02x}'
+
+
+def _fmt_ranges(ranges, fmt=_fmt_code_point):
+    parts = []
+    for lo, hi in ranges:
+        parts.append(fmt(lo, _CLASS_SPECIAL))
+        if hi > lo + 1:
+            parts.append('-')
+        if hi > lo:
+            parts.append(fmt(hi, _CLASS_SPECIAL))
+    return ''.join(parts)
+
+
+class RegexCodePoints(Regex):
+    '''
+    A set of code points, matched as UTF-8 bytes.
+
+    ∂𝑎(C) = ε if 𝑎 is an ASCII byte of C
+            the bytes that complete C's characters starting with 𝑎, if any
+            0 otherwise
+    ν(C) = 0 (False)
+    '''
+
+    def _set_ranges(self, ranges):
+        self.ranges = ranges
+
+        # ASCII members derive to ε, and every lead byte to the rest of the
+        # characters it starts, so bytes sharing a derivative share a class
+        #
+        ascii = 0
+        tails = {}
+        for lo, hi in ranges:
+            for seq in utf8_sequences(lo, hi):
+                first = seq[0]
+                if len(seq) == 1:
+                    ascii |= _byte_mask(*first)
+                    continue
+                tail = RegexConcat.of([RegexByte(_byte_mask(*rng)) for rng in seq[1:]])
+                for byte in range(first[0], first[1] + 1):
+                    tails.setdefault(byte, []).append(tail)
+
+        self._ascii = ascii
+        self._tails = {byte: functools.reduce(RegexOr, ts) for byte, ts in tails.items()}
+
+        classes = {}
+        for byte, tail in self._tails.items():
+            classes[tail] = classes.get(tail, 0) | 1 << byte
+
+        # Everything else derives to ∅
+        #
+        rest = (CHARSET_MAX - 1) ^ ascii
+        for mask in classes.values():
+            rest ^= mask
+        self.charset = CharSet(ascii, rest, *classes.values())
+
+    def _derive(self, ch):
+        byte = ord(ch)
+        if byte < 0x80:
+            return RegexEpsilon() if self._ascii >> byte & 1 else RegexEmpty()
+        return self._tails.get(byte, RegexEmpty())
+
+
+class RegexSym(RegexCodePoints):
     '''
     Represents a character literal or character class.
 
-    ∂𝑎(a) = ε
-    ∂𝑎(b) = 0
-    ν(a) = 0 (False)
-
+    sym is a single character, or an iterable of (lo, hi) code point ranges.
     If 'negate' is False, this matches any character in the set.
     If 'negate' is True, this matches any character NOT in the set.
     '''
 
     def __new__(cls, sym, negate=False, **kwargs):
-        full_mask = CHARSET_MAX - 1
-
-        if isinstance(sym, int):
-            # Mask
-            #
-            raw_mask = sym
-            display_sym = None
-        else:
-            # Single character
-            #
+        if isinstance(sym, str):
             if len(sym) != 1:
                 raise ValueError("RegexSym expects a single character string")
-            raw_mask = 1 << ord(sym)
-            display_sym = sym
+            ranges = ((ord(sym), ord(sym)),)
+        else:
+            ranges = merge_ranges(sym)
 
-        raw_mask &= full_mask
+        if negate:
+            ranges = invert_ranges(ranges)
 
-        match_mask = (full_mask ^ raw_mask) if negate else raw_mask
+        if not ranges:
+            return RegexEmpty()
+        if ranges == ((0, MAX_CODE_POINT),):
+            return RegexDot()
 
-        key = (cls, match_mask, frozenset(kwargs.items()))
+        key = (cls, ranges, frozenset(kwargs.items()))
 
         def init(self):
-            self.mask = match_mask
-            self.sym = display_sym
-            self.negate = negate
-            self.charset = CharSet(match_mask, full_mask ^ match_mask)
+            self._set_ranges(ranges)
+            lo, hi = ranges[0]
+            self.sym = chr(lo) if len(ranges) == 1 and lo == hi else None
 
         return cls._intern(key, init)
 
+    def __str__(self):
+        if self.sym is not None:
+            return _fmt_code_point(ord(self.sym), _SPECIAL)
+
+        inside = _fmt_ranges(self.ranges)
+        outside = _fmt_ranges(invert_ranges(self.ranges))
+        if len(outside) < len(inside):
+            return f'[^{outside}]'
+        return f'[{inside}]'
+
+
+class RegexByte(Regex):
+    '''
+    A set of bytes. These only appear in derivatives, as the rest of a
+    character whose first bytes were already read.
+
+    ∂𝑎(B) = ε if 𝑎 in B, else 0
+    ν(B) = 0 (False)
+    '''
+
+    def __new__(cls, mask, **kwargs):
+        key = (cls, mask, frozenset(kwargs.items()))
+
+        def init(self):
+            self.mask = mask
+            self.charset = CharSet(mask, (CHARSET_MAX - 1) ^ mask)
+
+        return cls._intern(key, init)
 
     def _derive(self, ch):
-        bit = 1 << ord(ch)
-        match = bool(self.mask & bit)
-
-        if match:
-            return RegexEpsilon()
-        return RegexEmpty()
+        return RegexEpsilon() if self.mask >> ord(ch) & 1 else RegexEmpty()
 
     def __str__(self):
-        return CharSet.fmt_mask(self.mask, bracket=False)
+        return CharSet.fmt_mask(self.mask)
 
 class RegexOr(Regex):
     '''Set union (OR): r | s - Match RE r or RE s
@@ -780,12 +984,15 @@ class RegexOpt(Regex):
         return f'{self.paren(self.expr)}{RegexOpt.sym}'
 
 
-class RegexDot(Regex):
-    '''Accept any single character (sometimes not including newline)
+class RegexDot(RegexCodePoints):
+    '''Accept any single character, newline included
 
-    ∂𝑎(.) = ε
+    ∂𝑎(.) = ε if 𝑎 is an ASCII byte
+            the bytes that complete a character, if 𝑎 can start one
+            0 otherwise
     ν(.) = 0 (False)
 
+    .* matches exactly the valid UTF-8 strings.
     '''
     sym = '.'
 
@@ -793,13 +1000,10 @@ class RegexDot(Regex):
         key = (cls, frozenset(kwargs.items()))
 
         def init(self):
-            self.charset = CharSet(CHARSET_MAX - 1)
+            self._set_ranges(((0, MAX_CODE_POINT),))
             self.isdot = True
 
         return cls._intern(key, init)
-
-    def _derive(self, ch):
-        return RegexEpsilon()
 
     def __str__(self):
         return RegexDot.sym
@@ -960,7 +1164,12 @@ class RegexDiff(Regex):
 class RegexNot(Regex):
     '''Set inverse (NOT): Must not match r.
 
-    ∂𝑎(¬r) = ¬∂𝑎(r)
+    ¬r is .* - r, the valid UTF-8 strings r does not match. Complementing
+    over all byte strings would let two invalid halves of a character
+    concatenate into a valid one, so ¬(.*)·¬(.*) would match "→".
+
+    ∂𝑎(¬r) = ∂𝑎(.*) - ∂𝑎(r)
+           = ¬∂𝑎(r) when 𝑎 is an ASCII byte, as ∂𝑎(.*) = .*
 
     ν(¬r) = ε if ν(r) = 0 ...
             0 if ν(r) = ε
@@ -979,7 +1188,7 @@ class RegexNot(Regex):
         def init(self):
             self.expr = expr
             self.args = (expr,)
-            self.charset = self.expr.charset
+            self.charset = self.expr.charset & RegexDot().charset
             self.isany = self.expr.isempty
             self.isnot = True
 
@@ -995,7 +1204,15 @@ class RegexNot(Regex):
         return self._nullable
 
     def _derive(self, ch):
-        return RegexNot(self.expr.derive(ch))
+        # After the first byte of a longer character, the rest of .* starts
+        # with the rest of that character, so this is a difference until
+        # the character ends and RegexDiff turns ¬∅ - r back into ¬r. ¬∅
+        # rather than .*, so that when r is ∅ it is the same state too.
+        #
+        rest = RegexDot().derive(ch)
+        if rest.isepsilon:
+            return RegexNot(self.expr.derive(ch))
+        return RegexDiff(RegexConcat(rest, RegexNot(RegexEmpty())), self.expr.derive(ch))
 
     def __str__(self):
         return f'{RegexNot.sym}{self.paren(self.expr)}'
@@ -1073,49 +1290,13 @@ class CharSet:
             inside = f"^{comp_inside}"
         return f"[{inside}]" if bracket else inside
 
-    @classmethod
-    def _fmt_mask_inside(cls, mask: int) -> str:
+    @staticmethod
+    def _fmt_mask_inside(mask: int) -> str:
         """
         Return ONLY the inside of a regex char class (no brackets),
         e.g. 'a-z0-9' or '\\x00-`b-\\xff'
         """
-        groups = CharSet(mask).get_chr_sets()
-        parts: list[str] = []
-        for group in groups:
-            # group is like [['a'], ['d','z']]
-            parts.append(cls.fmt_ranges(group, sep=""))
-        return "".join(parts)
-
-    @staticmethod
-    def fmt_ranges(ranges, *, sep: str = "") -> str:
-        """
-        ranges: list like [['a'], ['d','z']] (chars) OR [(97,), (100,122)] (ints)
-        sep:
-          - ''  => regex-class style (no commas)
-          - ', '=> debug/human style
-        """
-        parts = []
-        for rng in ranges:
-            if len(rng) == 2:
-                parts.append(f"{CharSet._fmt_char(rng[0])}-{CharSet._fmt_char(rng[1])}")
-            else:
-                parts.append(f"{CharSet._fmt_char(rng[0])}")
-        return sep.join(parts)
-
-
-    @staticmethod
-    def _fmt_char(code: int | str) -> str:
-        if isinstance(code, int):
-            ch = chr(code)
-            val = code
-        else:
-            ch = code
-            val = ord(ch)
-
-        if ch.isprintable() and ch not in ("\\", "]", "-", "^"):
-            return ch
-
-        return f"\\x{val:02x}"
+        return _fmt_ranges(mask_ranges(mask), _fmt_byte)
 
     def add(self, item: int) -> None:
         """Wrapper for add() that ignores 0"""
@@ -1137,65 +1318,6 @@ class CharSet:
         return CharSet(*out)
 
 
-    def get_int_sets(self):
-        """
-        Decompose each bitmask in the charset into a list of integer code-point intervals.
-
-        Each bitmask represents a character equivalence class — a set of code
-        points that produce the same DFA transition. Bits are extracted,
-        converted to code point indices, and adjacent values are merged into
-        [lo, hi] ranges.
-
-        Returns a list of interval lists, one per equivalence class:
-
-            [
-              [ [65], [68, 90] ],   # one mask: {65} ∪ [68..90]
-              [ [48, 57] ],         # another mask: [48..57]
-              ...
-            ]
-
-        Each interval is either [i] (singleton) or [lo, hi] (inclusive range).
-        """
-        ints = []
-
-        for mask in sorted(self.masks):
-            charclass = []
-            while mask:
-                lsb = mask & -mask
-                i = lsb.bit_length() - 1
-                mask &= ~lsb
-                charclass.append([i])
-
-            ints.append(merge_intervals(charclass, merge_adjacent=True))
-
-        return ints
-
-    def get_chr_sets(self):
-        """
-        Return character sets as lists of intervals in character form.
-
-        Shape mirrors get_int_sets():
-
-            [
-              [ ['a'], ['d','z'] ],   # one mask: {'a'} ∪ ['d'..'z']
-              [ ['0','9'] ],          # another mask, etc.
-            ]
-        """
-        ord_sets = self.get_int_sets()
-        chr_sets = []
-
-        for intervals in ord_sets:
-            this_set = []
-            for interval in intervals:
-                if len(interval) == 1:
-                    this_set.append([chr(interval[0])])
-                else:
-                    lo, hi = interval
-                    this_set.append([chr(lo), chr(hi)])
-            chr_sets.append(this_set)
-
-        return chr_sets
-
     def contains_ord(self, code: int) -> bool:
         mask = 1 << code
         return any(mask & m for m in self.masks)
@@ -1205,49 +1327,3 @@ class CharSet:
 
     def __repr__(self):
         return f"CharSet({sorted(self.masks)})"
-
-
-# Merge intervals including adjacent, assumed sorted based on the left value.
-# Intervals must be a list type and either be an upper & lower bound or a single
-# value:
-#
-# Example:
-#
-# [lower, upper]
-#
-# [single] (same as [single:single])
-#
-def merge_intervals(intervals, merge_adjacent=False):
-    ''' Merge a list of intervals '''
-
-    offset = 1 if merge_adjacent else 0
-
-    # If we don't have at least two intervals, we have nothing to do here.
-    #
-    if len(intervals) < 2:
-        return intervals
-
-    # Ensure that our start values are in increasing order
-    #
-    intervals.sort(key=lambda x: x[0])
-
-    # Initialize our result with the first interval
-    #
-    merged = [intervals[0]]
-
-    for ival in intervals[1:]:
-        top = merged[-1]
-
-        # If current interval is not overlapping or adjacent with stack
-        # top, push it to the stack
-        #
-        if top[-1] < ival[0] - offset:
-            merged.append(ival)
-
-        # Otherwise update the ending time of top if ending of current
-        # interval is more
-        #
-        elif top[-1] < ival[-1]:
-            merged[-1] = [top[0], ival[-1]]
-
-    return merged
