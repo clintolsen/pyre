@@ -37,8 +37,7 @@ class Lexer:
         ('OTHER',     r".")
     ]
 
-    re_spec = "|".join(f"(?P<{kind}>{pat})" for kind, pat in _SPECS)
-    _CALC_DFA = pyre.compile(re_spec)
+    _CALC_DFA = pyre.lexer(_SPECS)
 
     def __init__(self, text: str):
         self.text = text

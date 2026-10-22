@@ -24,7 +24,7 @@ The project includes:
 - A full AST of regular-expression operators
 - DFA construction using derivatives
 - Capture groups, including named groups
-- `match()`, `fullmatch()` and `search()` APIs, plus a `lex()` method on compiled patterns
+- `match()`, `fullmatch()` and `search()` APIs, plus `lexer()` for flex-style tokenizing
 - Set operators on parsed patterns, and `equal()`, `subset()` and `isempty()` language checks
 - Verbose patterns ala Python `re.X` with inline comments `#` allowed
 - An example calculator app using lexer feature
@@ -175,8 +175,7 @@ class Lexer:
         ('OTHER',     r".")
     ]
 
-    re_spec = "|".join(f"(?P<{kind}>{pat})" for kind, pat in _SPECS)
-    _CALC_DFA = pyre.compile(re_spec)
+    _CALC_DFA = pyre.lexer(_SPECS)
 
     def __init__(self, text: str):
         self.text = text
@@ -203,7 +202,27 @@ class Lexer:
         yield Token('EOF', '<EOF>', '', eof, eof)
 ```
 
-The token types are assembled into a large alternation. Internally this is what lexers do when you give it a series of rules. You can perform the same operations using Python's `re` but this is slightly more compact.
+`pyre.lexer()` compiles the rules into one DFA whose states track every rule at once, so each state knows which rule it accepts. Like flex, `lex()` takes the longest match, and the earliest rule when two match the same text.
+
+Each token also carries the capture groups of the rule that matched, numbered within that rule's pattern, so there's no need to reparse the token text to pull it apart. They're only computed when you read them:
+
+```python
+lexer = pyre.lexer([
+    ('NUMBER', r"(?P<int>\d+)(?:\.(?P<frac>\d+))?"),
+    ('WS',     r"\s+"),
+])
+
+for token in lexer.lex("3.14 42"):
+    print(token, token.group('int'), token.group('frac'))
+```
+
+```
+Token('NUMBER', '3.14', 0, 4) 3 14
+Token('WS', ' ', 4, 5) None None
+Token('NUMBER', '42', 5, 7) 42 None
+```
+
+`token.groups` gives the spans in the same form `match()` returns them.
 
 ---
 

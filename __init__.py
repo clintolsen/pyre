@@ -2,9 +2,9 @@
 pyre - A Regular Expression Engine Based on Derivatives
 """
 
-from typing import Dict, List, Tuple, Union
+from typing import Dict, Iterable, List, Tuple, Union
 
-from .dfa import compile as _compile_dfa, DFA
+from .dfa import compile as _compile_dfa, lexer as _lexer_dfa, DFA, Token
 from .regex import Regex
 from . import parser as _parser
 from .parser import PatternError
@@ -41,6 +41,18 @@ def compile(pattern: Pattern) -> DFA:
         return pattern
     return _compile_dfa(_to_regex(pattern))
 
+def lexer(rules: Iterable[Tuple[str, Pattern]]) -> DFA:
+    """
+    Compile (name, pattern) rules into one DFA for DFA.lex(). Each token is
+    named after the rule matching the longest text, the earliest rule on
+    ties, and its groups are numbered within that rule's pattern.
+    """
+    rules = list(rules)
+    if not rules:
+        raise ValueError('lexer() needs at least one rule')
+    return _lexer_dfa([name for name, _ in rules],
+                      [_to_regex(pattern) for _, pattern in rules])
+
 def fullmatch(pattern: Pattern, string: str) -> MatchResult:
     return compile(pattern).fullmatch(string)
 
@@ -65,6 +77,7 @@ def subset(a: Pattern, b: Pattern) -> bool:
 __all__ = [
     'parse',
     'compile',
+    'lexer',
     'match',
     'fullmatch',
     'search',
@@ -72,4 +85,5 @@ __all__ = [
     'equal',
     'subset',
     'PatternError',
+    'Token',
 ]

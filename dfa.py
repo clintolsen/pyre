@@ -2,7 +2,9 @@
 # dfa.py
 #
 
+import functools
 import logging
+import operator
 LOG = logging.getLogger(__file__)
 
 from . import util
@@ -28,21 +30,29 @@ class Goto:
 
 
 class DFA:
-    def __init__(self, expr):
-        # The DFA only decides whether text matches and where a match ends,
-        # which capture markers never affect, so it is built from the
-        # expression with captures stripped. That keeps it smaller, and lets
-        # alternatives intern commutatively. The capture pass runs on the
-        # original expression, where operand order sets group numbering and
-        # branch priority.
+    def __init__(self, *exprs, names=None):
+        # A state is a vector holding one derivative per expression, so it
+        # tracks every rule at once and knows which ones still match. A
+        # single pattern is a vector of one. Owens, Reppy and Turon call
+        # these regular vectors.
         #
-        self.expr = expr
+        # The DFA only decides whether text matches, where a match ends and
+        # which rule it belongs to, which capture markers never affect, so
+        # it is built from the expressions with captures stripped. That keeps
+        # it smaller, and lets alternatives intern commutatively. The capture
+        # pass runs on the original expression of the rule that matched,
+        # where operand order sets group numbering and branch priority.
+        #
+        self.exprs = exprs
+        self.names = names
         if LOG.isEnabledFor(logging.DEBUG):
-            LOG.debug('Pattern:\n%s', expr.tree())
+            for i, expr in enumerate(exprs):
+                label = f' {names[i]}' if names else ''
+                LOG.debug('Pattern%s:\n%s', label, expr.tree())
 
-        self.group_numbers = capture.group_numbers(expr)
+        self.group_numbers = [capture.group_numbers(expr) for expr in exprs]
         self.states = set()
-        self.initial = DFAState(expr._without_captures())
+        self.initial = DFAState(tuple(expr._without_captures() for expr in exprs))
 
         todo = {self.initial}
 
@@ -53,13 +63,13 @@ class DFA:
 
             LOG.debug('Current state %s: %s', current.name, current)
 
-            classes = current.regex.charset.get_int_sets()
+            classes = current.charset.get_int_sets()
 
             for charset in classes:
                 if charset:
                     char = chr(charset[0][0])
 
-                    _next = DFAState(current.regex.derive(char))
+                    _next = DFAState(tuple(r.derive(char) for r in current.vector))
 
                     LOG.debug('Derivative of %s of %r => %s', current.name, char, _next)
                     LOG.debug('Transition for %s', [regex.CharSet._fmt_char(x) for x in charset[0]])
@@ -73,20 +83,21 @@ class DFA:
                     if _next not in self.states:
                         todo.add(_next)
 
-        self.states.add(DFAState.empty())
-        if DFAState.empty().name is None:
-            DFAState.empty().name = f'q{len(self.states)}'
+        dead = DFAState.dead(len(exprs))
+        self.states.add(dead)
+        if dead.name is None:
+            dead.name = f'q{len(self.states)}'
 
         if LOG.getEffectiveLevel() == logging.DEBUG:
             for state in sorted(self.states, key=lambda x: x.name):
                 label = state.name
 
-                if state.regex.isnullable():
+                if state.accept is not None:
                     label = util.highlight(label)
 
                 print(f'{label}: {state}')
 
-                for mask in sorted(state.regex.charset.masks):
+                for mask in sorted(state.charset.masks):
                     lsb_pos = (mask & -mask).bit_length() - 1
                     goto = state.goto[lsb_pos]
                     print(f"    {regex.CharSet.fmt_mask(mask)} {goto}")
@@ -94,6 +105,10 @@ class DFA:
         LOG.debug('Total DFA states: %d', len(self.states))
         LOG.debug('Total RE instances: %d', len(regex.Regex._instance))
 
+    @property
+    def expr(self):
+        """ One expression for the language the DFA accepts: any of its rules """
+        return functools.reduce(regex.RegexOr, self.exprs)
 
     def run(self, text, index=0):
         """
@@ -142,13 +157,13 @@ class DFA:
 
             # Dead state
             #
-            if state.regex.isempty:
+            if state.isdead:
                 return {}
 
-        if not state.regex.isnullable():
+        if state.accept is None:
             return {}
 
-        return self._groups(text, 0, len(text))
+        return self._groups(text, 0, len(text), state.accept)
 
 
     def match(self, text, *, greedy=True):
@@ -159,44 +174,55 @@ class DFA:
     def _run_from(self, text, offset, *, greedy=True):
         """
         Run the DFA from offset to find the match end, then extract capture
-        groups for that span. Stops when we hit the empty state. Match end is
-        the latest nullable index.
+        groups for that span.
         Returns (end_index, groups); (None, {}) if no match.
         """
-        last_index = None
+        end, rule = self._end(text, offset, greedy=greedy)
 
-        for step in self.run(text, index=offset):
-            state = step.state
+        if end is None:
+            return None, {}
 
-            if state.regex.isempty:
+        return end, self._groups(text, offset, end, rule)
+
+    def _end(self, text, offset, *, greedy=True):
+        """
+        Run the DFA from offset until it reaches the dead state. The match
+        ends at the last accepting state, or the first if not greedy, and
+        belongs to the rule that state accepts.
+        Returns (end_index, rule); (None, None) if no match.
+        """
+        state = self.initial
+        end = rule = None
+
+        for index in range(offset, len(text)):
+            state = state.goto[ord(text[index])]._next
+
+            if state.isdead:
                 break
 
-            if state.regex.isnullable():
-                last_index = step.index + 1
+            if state.accept is not None:
+                end, rule = index + 1, state.accept
                 if not greedy:
                     break
 
-        if last_index is None:
-            return None, {}
+        return end, rule
 
-        return last_index, self._groups(text, offset, last_index)
-
-    def _groups(self, text, start, end):
+    def _groups(self, text, start, end, rule):
         """
-        Capture groups for the DFA-confirmed match text[start:end], taken from
-        the single highest-priority accepting path.
+        Capture groups for the DFA-confirmed match text[start:end] of rule,
+        taken from the single highest-priority accepting path.
         """
-        if not self.group_numbers:
+        numbers = self.group_numbers[rule]
+        if not numbers:
             return {0: [(start, end)]}
 
-        return capture.captures(self.expr, text, start, end,
-                                self.group_numbers)
+        return capture.captures(self.exprs[rule], text, start, end, numbers)
 
     # Skip over known bad start characters
     #
     def _skip(self, s, offset):
         n = len(s)
-        while offset < n and self.initial.goto[ord(s[offset])]._next.regex.isempty:
+        while offset < n and self.initial.goto[ord(s[offset])]._next.isdead:
             offset += 1
         return offset
 
@@ -247,61 +273,124 @@ class DFA:
 
 
     def lex(self, text):
+        """
+        Split text into tokens, taking the longest match and the earliest
+        rule on ties. Yields a Token for each, and stops where nothing
+        matches.
+
+        A DFA built by lexer() names each token after the rule that matched,
+        and runs the capture pass only if the token's groups are read. A
+        single pattern names each token after the named group spanning it,
+        which needs the capture pass on every token.
+        """
         index = 0
         while index < len(text):
-            end_index, info = self._run_from(text, index, greedy=True)
+            end, rule = self._end(text, index)
 
-            kind = None
-            for gid, intervals in info.items():
-                # Skip group 0 since we want explicit capture groups
-                #
-                if not isinstance(gid, int):
-                    for _begin, _end in intervals:
-                        # Only choose a match for the entire span
-                        #
-                        if _begin == index and _end == end_index:
-                            kind = gid
-                            token = text[index:end_index]
+            if end is None:
+                break
 
-            if kind:
-                yield (kind, token, index, end_index)
-                index = end_index
-                continue
+            if self.names:
+                yield Token(self.names[rule], text, index, end, self, rule)
+            else:
+                groups = self._groups(text, index, end, rule)
 
-            break
+                kind = None
+                for gid, intervals in groups.items():
+                    # Skip numbered groups since we want named ones, and
+                    # only choose a match for the entire span
+                    #
+                    if not isinstance(gid, int) and (index, end) in intervals:
+                        kind = gid
+
+                if not kind:
+                    break
+
+                yield Token(kind, text, index, end, self, rule, groups)
+
+            index = end
 
     def isempty(self):
         """Returns True if the language of this DFA is empty (no reachable accepting states)."""
-        return all(not state.regex.isnullable() for state in self.states)
+        return all(state.accept is None for state in self.states)
+
+
+class Token:
+    """
+    A token from DFA.lex(). It unpacks like the tuple (kind, text, start,
+    end), where text is the matched string.
+
+    groups maps group numbers and names to spans, as match() does, and is
+    computed the first time it is read.
+    """
+    __slots__ = ('kind', 'text', 'start', 'end', '_source', '_dfa', '_rule', '_groups')
+
+    def __init__(self, kind, source, start, end, dfa, rule, groups=None):
+        self.kind = kind
+        self.text = source[start:end]
+        self.start = start
+        self.end = end
+        self._source = source
+        self._dfa = dfa
+        self._rule = rule
+        self._groups = groups
+
+    @property
+    def groups(self):
+        if self._groups is None:
+            self._groups = self._dfa._groups(self._source, self.start, self.end, self._rule)
+        return self._groups
+
+    def group(self, gid=0):
+        """ The text of group gid, a number or name, or None if it did not match """
+        intervals = self.groups.get(gid)
+        if not intervals:
+            return None
+        start, end = intervals[0]
+        return self._source[start:end]
+
+    def __iter__(self):
+        return iter((self.kind, self.text, self.start, self.end))
+
+    def __getitem__(self, index):
+        return (self.kind, self.text, self.start, self.end)[index]
+
+    def __repr__(self):
+        return f'Token({self.kind!r}, {self.text!r}, {self.start}, {self.end})'
 
 
 class DFAState:
-    _empty = None
     _instances = {}
 
-    def __new__(cls, expr):
-        if expr in cls._instances:
-            return cls._instances[expr]
+    def __new__(cls, vector):
+        if vector in cls._instances:
+            return cls._instances[vector]
 
         self = object.__new__(cls)
-        cls._instances[expr] = self
+        cls._instances[vector] = self
 
-        self.regex = expr
+        self.vector = vector
         self.name = None
-        self.goto = [Goto(DFAState.empty())] * 256
+
+        # The rule the state accepts is the first one that matches here,
+        # and the dead state is where every rule has failed.
+        #
+        self.accept = next((i for i, r in enumerate(vector) if r.isnullable()), None)
+        self.isdead = all(r.isempty for r in vector)
+
+        # Characters split the vector only where they split some component,
+        # so its classes are where all of theirs meet.
+        #
+        self.charset = functools.reduce(operator.and_, (r.charset for r in vector))
+
+        dead = self if self.isdead else DFAState.dead(len(vector))
+        self.goto = [Goto(dead)] * 256
 
         return self
 
     @classmethod
-    def empty(cls):
-        if cls._empty is None:
-            cls._empty = object.__new__(cls)
-            cls._empty.regex = regex.RegexEmpty()
-            cls._empty.name = None
-            cls._empty.goto = [Goto(cls._empty)] * 256
-            cls._instances[cls._empty.regex] = cls._empty
-
-        return cls._empty
+    def dead(cls, n):
+        return cls((regex.RegexEmpty(),) * n)
 
     __hash__ = object.__hash__
 
@@ -309,8 +398,16 @@ class DFAState:
         return self is other
 
     def __repr__(self):
-        return f'DFAState(name={self.name} regex={self.regex})'
+        if len(self.vector) == 1:
+            shown = self.vector[0]
+        else:
+            shown = '(' + ', '.join(map(str, self.vector)) + ')'
+        return f'DFAState(name={self.name} regex={shown})'
 
 def compile(expr):
     ''' Construct a DFA from a regular expression '''
     return DFA(expr)
+
+def lexer(names, exprs):
+    ''' Construct a DFA whose rules are exprs, named by names '''
+    return DFA(*exprs, names=names)
