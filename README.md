@@ -144,7 +144,7 @@ Without complement, you'd have to use something like:
 
 `pyre.equal()` confirms the two patterns match exactly the same comments.
 
-That has some serious `¯_(ツ)_/¯` vibes.
+That has some serious `¯\_(ツ)_/¯` vibes.
 
 Use `\ ` (backslash-space) or `[ ]` to match a literal space, or `\s` for any
 whitespace character. As in Python's `re.X`, whitespace inside a character class
