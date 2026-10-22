@@ -11,6 +11,10 @@ LOG = logging.getLogger(__file__)
 
 
 def main(argv=None):
+    """
+    Exit status follows grep: 0 if the pattern matched, 1 if it did not,
+    and 2 for an error.
+    """
     argparser = argparse.ArgumentParser()
     argparser.add_argument(
         '--debug', '-d',
@@ -45,14 +49,14 @@ def main(argv=None):
     if args.target:
         target = Path(args.target)
         if target.is_file():
-            with open(target) as f:
-                file = f.read()
-
             try:
+                with open(target) as f:
+                    file = f.read()
+
                 groups = search(args.regex, file, all=args.all, greedy=args.greedy)
-            except ValueError as e:
+            except (OSError, ValueError) as e:
                 LOG.error(e)
-                return 1
+                return 2
 
             LOG.debug(f'Groups: {groups}')
             flatten = [interval for group in groups.values() for interval in group]
@@ -80,12 +84,16 @@ def main(argv=None):
                 groups = fullmatch(args.regex, args.target)
             except ValueError as e:
                 LOG.error(e)
-                return 1
+                return 2
 
             print(groups)
+
+        return 0 if groups else 1
     else:
         try:
             print(compile(args.regex))
         except ValueError as e:
             LOG.error(e)
-            return 1
+            return 2
+
+        return 0

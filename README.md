@@ -77,6 +77,11 @@ Example:
 pyre 'lex' test.cpp
 ```
 
+With a file, `pyre` prints it with every match highlighted. Otherwise `target`
+is a string, and `pyre` prints the groups of a full match against it. Like
+`grep`, it exits with 0 if the pattern matched, 1 if it did not, and 2 for an
+error such as a bad pattern.
+
 ---
 
 ## Python Usage
