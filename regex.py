@@ -217,21 +217,30 @@ class Regex:
         self_class = self.__class__.__name__
         child_class = child.__class__.__name__
 
+        # __str__ directly rather than str(), and a loop in join() rather
+        # than a generator, so printing takes three frames per level of the
+        # tree and deep trees print within the default recursion limit
+        #
+        text = child.__str__()
+
         try:
             mine = Regex.PRECEDENCE[self_class]
             theirs = Regex.PRECEDENCE[child_class]
         except KeyError:
-            return '%s' % child
+            return text
 
         if theirs < mine or (right and theirs == mine and not (
                 child_class == self_class and self_class in Regex.ASSOCIATIVE)):
-            return '(%s)' % child
+            return f'({text})'
 
-        return '%s' % child
+        return text
 
     def join(self, sep):
         ''' The operands printed between separators, grouped left to right '''
-        return sep.join(self.paren(arg, right=i > 0) for i, arg in enumerate(self.args))
+        parts = []
+        for i, arg in enumerate(self.args):
+            parts.append(self.paren(arg, right=i > 0))
+        return sep.join(parts)
 
     def tree(self, prefix='', is_last=True):
         ''' Output a representation of an RE as an ASCII tree '''
@@ -774,26 +783,44 @@ class RegexXor(Regex):
         # still sets group numbering when either side has captures.
         #
         if left.hascaptures or right.hascaptures:
-            key = (cls, (left, right), frozenset(kwargs.items()))
+            args = (left, right)
+            key = (cls, args, frozenset(kwargs.items()))
         else:
-            key = (cls, frozenset((left, right)), frozenset(kwargs.items()))
+            # 4) ⊕ is associative and commutative, and r ⊕ r = ∅, so the
+            #    operands flatten into one node, and an operand that occurs
+            #    twice cancels out. A chain of ⊕ is one level deep.
+            #
+            odd = {}
+            for arg in Regex.get_args(left, RegexXor) + Regex.get_args(right, RegexXor):
+                if odd.pop(arg, None) is None:
+                    odd[arg] = True
+            if not odd:
+                return RegexEmpty()
+            if len(odd) == 1:
+                return next(iter(odd))
+            args = tuple(odd)
+            key = (cls, frozenset(args), frozenset(kwargs.items()))
 
         def init(self):
-            self.args = (left, right)
+            self.args = args
             self.charset = left.charset & right.charset
 
         return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
-            left, right = self.args
-            self._nullable = RegexXor(left.nullable(), right.nullable())
+            result = RegexEmpty()
+            for arg in self.args:
+                result = RegexXor(result, arg.nullable())
+            self._nullable = result
 
         return self._nullable
 
     def _derive(self, ch):
-        left, right = self.args
-        return RegexXor(left.derive(ch), right.derive(ch))
+        result = RegexEmpty()
+        for arg in self.args:
+            result = RegexXor(result, arg.derive(ch))
+        return result
 
     def __str__(self):
         return self.join(f' {RegexXor.sym} ')
@@ -1301,15 +1328,27 @@ class RegexDiff(Regex):
     def nullable(self):
         if self._nullable is None:
             first, *removed = self.args
-            if first.isnullable() and not any(arg.isnullable() for arg in removed):
-                self._nullable = RegexEpsilon()
-            else:
-                self._nullable = RegexEmpty()
+            result = first.nullable()
+            for arg in removed:
+                if result.isempty:
+                    break
+                result = RegexDiff(result, arg.nullable())
+            self._nullable = result
 
         return self._nullable
 
+    # Loops here and in nullable() rather than comprehensions, which on
+    # Python 3.9 add a frame per level of a nested difference. Nothing is
+    # left to remove from once the first operand's derivative is ∅.
+    #
     def _derive(self, ch):
-        return functools.reduce(RegexDiff, [arg.derive(ch) for arg in self.args])
+        first, *removed = self.args
+        result = first.derive(ch)
+        for arg in removed:
+            if result.isempty:
+                break
+            result = RegexDiff(result, arg.derive(ch))
+        return result
 
     def __str__(self):
         return self.join(f' {RegexDiff.sym} ')

@@ -125,14 +125,19 @@ def _nullable_markers(e):
 
     if isinstance(e, rx.RegexDiff):
         first, *removed = e.args
-        if any(arg.isnullable() for arg in removed):
-            return None
+        for arg in removed:
+            if arg.isnullable():
+                return None
         return nullable_markers(first)
 
     if isinstance(e, rx.RegexNot):
         return None if e.expr.isnullable() else ()
 
+    # Without captures, ⊕ may have many operands; it has no markers to report
+    #
     if isinstance(e, rx.RegexXor):
+        if not e.hascaptures:
+            return () if e.isnullable() else None
         left, right = e.args
         left_ok = left.isnullable()
         right_ok = right.isnullable()
@@ -221,16 +226,22 @@ def _derive_branches(e, ch):
 
     if isinstance(e, rx.RegexDiff):
         first, *removed = e.args
-        negated = [arg.derive(ch) for arg in removed]
+        negated = []
+        for arg in removed:
+            negated.append(arg.derive(ch))
         return [(m, functools.reduce(rx.RegexDiff, [t] + negated)) for m, t in derive_branches(first, ch)]
 
     if isinstance(e, rx.RegexNot):
         return [((), e.derive(ch))]
 
     if isinstance(e, rx.RegexXor):
+        if not e.hascaptures:
+            return [((), e.derive(ch))]
+        # Either side's branches, with the other side removed
+        #
         left, right = e.args
-        return (derive_branches(rx.RegexDiff(left, right), ch) +
-                derive_branches(rx.RegexDiff(right, left), ch))
+        out = [(m, rx.RegexDiff(t, right.derive(ch))) for m, t in derive_branches(left, ch)]
+        return out + [(m, rx.RegexDiff(t, left.derive(ch))) for m, t in derive_branches(right, ch)]
 
     raise TypeError(f'derive_branches: unsupported node {type(e).__name__}')
 

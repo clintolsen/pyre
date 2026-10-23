@@ -375,5 +375,48 @@ class TestDifferenceChains(RegexTestCase):
         str(chain)
 
 
+class TestXorChains(RegexTestCase):
+    """
+    ^ is associative and commutative, and r ^ r is ∅, so a chain of ^ is
+    one node holding the operands that occur an odd number of times
+    """
+
+    def test_spellings_are_one_node(self):
+        chain = pyre.parse('a^b^c')
+        self.assertEqual(set(chain.args), {pyre.parse(x) for x in 'abc'})
+        for pattern in ['(?:a^b)^c', 'a^(?:b^c)', 'c^b^a', 'a^b^c^b^b']:
+            with self.subTest(pattern=pattern):
+                self.assertIs(pyre.parse(pattern), chain)
+
+    def test_pairs_cancel(self):
+        self.assertIs(pyre.parse('a^b^a'), pyre.parse('b'))
+        self.assertTrue(pyre.isempty('a^b^a^b'))
+
+    def test_matches_an_odd_number_of_operands(self):
+        for text, odd in [('a', True), ('ab', False), ('abc', True), ('x', False)]:
+            with self.subTest(text=text):
+                self.assertEqual(bool(pyre.fullmatch('a.*^.*b.*^.*c', text)), odd)
+
+    def test_long_chain(self):
+        syms = [pyre.parse('w%d' % i) for i in range(500)]
+        chain = functools.reduce(operator.xor, syms + syms[:10])
+        self.assertEqual(len(chain.args), 490)
+        self.assertTrue(pyre.fullmatch(chain, 'w10'))
+        self.assertFalse(pyre.fullmatch(chain, 'w5'))
+
+
+class TestDeepTrees(RegexTestCase):
+    """Nesting that can't flatten still prints and matches"""
+
+    def test_nested_complements(self):
+        a = pyre.parse('a')
+        r = pyre.parse('(b)')
+        for _ in range(150):
+            r = ~(r | a)
+        self.assertTrue(str(r).startswith('~(~(~('))
+        self.assertEqual(pyre.compile(r).isempty(), False)
+        pyre.search(r, 'abab')
+
+
 if __name__ == "__main__":
     unittest.main()
