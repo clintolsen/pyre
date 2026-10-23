@@ -5,6 +5,7 @@
 import functools
 import logging
 import operator
+import weakref
 LOG = logging.getLogger(__file__)
 
 from . import util
@@ -461,11 +462,15 @@ class Token:
 
 
 class DFAState:
-    _instances = {}
+    # Held weakly, as Regex nodes are: a state lives while some DFA uses it
+    #
+    _instances = weakref.WeakValueDictionary()
 
     def __new__(cls, vector):
-        if vector in cls._instances:
+        try:
             return cls._instances[vector]
+        except KeyError:
+            pass
 
         self = object.__new__(cls)
         cls._instances[vector] = self

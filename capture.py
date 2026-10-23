@@ -25,9 +25,6 @@ import functools
 from . import event
 from . import regex as rx
 
-_derive_branches_cache = {}
-_nullable_markers_cache = {}
-
 _NOT_NULLABLE = object()
 
 
@@ -80,11 +77,10 @@ def nullable_markers(expr):
     Returns the markers on the highest-priority empty path through expr, as a
     tuple in traversal order, or None if expr is not nullable.
     """
-    try:
-        result = _nullable_markers_cache[expr]
-    except KeyError:
+    result = expr._markers
+    if result is None:
         result = _nullable_markers(expr)
-        _nullable_markers_cache[expr] = _NOT_NULLABLE if result is None else result
+        expr._markers = _NOT_NULLABLE if result is None else result
         return result
 
     return None if result is _NOT_NULLABLE else result
@@ -159,14 +155,13 @@ def derive_branches(expr, ch):
     markers is the tuple of markers crossed before consuming ch on that
     branch, and term is what remains of that branch afterward.
     """
-    key = (expr, ch)
     try:
-        return _derive_branches_cache[key]
+        return expr._branches[ch]
     except KeyError:
         pass
 
     result = [(m, t) for m, t in _derive_branches(expr, ch) if not t.isempty]
-    _derive_branches_cache[key] = result
+    expr._branches[ch] = result
     return result
 
 

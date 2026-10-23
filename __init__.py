@@ -33,6 +33,14 @@ def _to_regex(pattern: Pattern) -> Regex:
     raise TypeError(f'expected str, Regex, or DFA, got {type(pattern).__name__}')
 
 
+# The most recently compiled patterns, as in Python's re, so calling
+# search() and the like in a loop doesn't rebuild the DFA each time. Nodes
+# and states are otherwise freed once nothing uses them, so this is what
+# keeps a recent pattern's DFA alive between calls.
+#
+_MAXCACHE = 512
+_cache: Dict[Union[str, Regex], DFA] = {}
+
 def compile(pattern: Pattern) -> DFA:
     """
     Compile a regex pattern string or Regex AST node into a DFA.
@@ -40,7 +48,15 @@ def compile(pattern: Pattern) -> DFA:
     """
     if isinstance(pattern, DFA):
         return pattern
-    return _compile_dfa(_to_regex(pattern))
+    try:
+        return _cache[pattern]
+    except KeyError:
+        pass
+    dfa = _compile_dfa(_to_regex(pattern))
+    if len(_cache) >= _MAXCACHE:
+        del _cache[next(iter(_cache))]
+    _cache[pattern] = dfa
+    return dfa
 
 def lexer(rules: Iterable[Tuple[str, Pattern]]) -> DFA:
     """

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import weakref
 
 LOG = logging.getLogger(__name__)
 
@@ -33,7 +34,13 @@ MAX_CODE_POINT = 0x10FFFF
 #
 class Regex:
     '''Base class for all regular expression objects'''
-    _instance = {}
+
+    # Equal expressions are one object, so comparing them is `is`. The
+    # table holds its nodes weakly: a node lives while something uses it,
+    # and building an equal one meanwhile finds it again. Its key holds the
+    # operands, so they live as long as the node does.
+    #
+    _instance = weakref.WeakValueDictionary()
     _id_count = 0
 
     @classmethod
@@ -48,11 +55,17 @@ class Regex:
             self = object.__new__(cls)
             self.key = key
 
-            self.id = len(Regex._instance)
+            Regex._id_count += 1
+            self.id = Regex._id_count
 
             self._nullable = None
             self._derivatives = {}
             self._stripped = None
+
+            # The capture pass's caches, kept here so they go with the node
+            #
+            self._branches = {}
+            self._markers = None
             self.events = ()
 
             # The operands of this node, in order. Every walk over the tree
