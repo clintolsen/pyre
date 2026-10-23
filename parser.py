@@ -486,51 +486,49 @@ class _Parser:
 
     @staticmethod
     def _repeat(expr, spec):
-        """ Expand r{...} into concatenations and alternations. """
+        """
+        Expand r{...} into concatenations and optionals. As in RE2, r{m,n}
+        is m copies of r and then n - m nested optionals, so r{2,4} is
+        r·r·(r·r?)?. That grows linearly with n, matches each length one
+        way, and its derivative by r is the same form one level shorter.
+        """
 
-        # Generate a concatenation of an expression num times
+        # A concatenation of num copies, built by doubling so that each
+        # step copies the operands only once
         #
         def make_cat(expr, num):
-            if num == 0:
-                return regex.RegexEpsilon()
+            out = regex.RegexEpsilon()
+            power = expr
+            while num:
+                if num & 1:
+                    out = regex.RegexConcat(out, power)
+                num >>= 1
+                if num:
+                    power = regex.RegexConcat(power, power)
+            return out
 
-            cat = expr
-            for _ in range(num - 1):
-                cat = regex.RegexConcat(cat, expr)
-
-            return cat
+        # Up to num more copies: (r·(r·…r?)?)?
+        #
+        def make_opt(expr, num):
+            out = regex.RegexEpsilon()
+            for _ in range(num):
+                out = regex.RegexOpt(regex.RegexConcat(expr, out))
+            return out
 
         if isinstance(spec, int):
             return make_cat(expr, spec)
 
         lo, hi = spec
+        lo = lo or 0
 
-        # {,n}  →  0..n
-        #
-        if lo is None:
-            out = regex.RegexEpsilon()
-            for k in range(1, hi + 1):
-                out = regex.RegexOr(out, make_cat(expr, k))
-            return out
-
-        # {0,}  →  0..∞  ==  r*
-        #
-        if lo == 0 and hi is None:
-            return regex.RegexStar(expr)
-
-        # {m,} with m > 0  →  r^m r*
+        # {m,}  →  r^m·r*
         #
         if hi is None:
             return regex.RegexConcat(make_cat(expr, lo), regex.RegexStar(expr))
 
-        # {m,n} with finite bounds
+        # {m,n}  →  r^m then up to n - m more
         #
-        out = None
-        for k in range(lo, hi + 1):
-            cat = make_cat(expr, k)
-            out = cat if out is None else regex.RegexOr(out, cat)
-
-        return out
+        return regex.RegexConcat(make_cat(expr, lo), make_opt(expr, hi - lo))
 
     # Scanning
     #

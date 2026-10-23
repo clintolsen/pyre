@@ -127,6 +127,37 @@ class TestRepeat(RegexTestCase):
 
         self.assert_search_same_as_re(pattern, text)
 
+class TestCountedRepeatExpansion(RegexTestCase):
+    """
+    r{m,n} expands to m copies of r and then nested optionals, as in RE2,
+    so its size and DFA grow linearly with n
+    """
+
+    def test_nested_optionals(self):
+        self.assertIs(pyre.parse('a{2,4}'), pyre.parse('aa(?:a(?:a)?)?'))
+        self.assertIs(pyre.parse('a{,2}'), pyre.parse('(?:a(?:a)?)?'))
+        self.assertIs(pyre.parse('(?:ab){1,3}'), pyre.parse('ab(?:ab(?:ab)?)?'))
+
+    def test_large_bounds(self):
+        # The flat alternation this replaced took cubic time to build
+        dfa = pyre.compile('a{0,1000}')
+        self.assertEqual(len(dfa.states), 1002)
+        self.assertTrue(dfa.fullmatch('a' * 1000))
+        self.assertFalse(dfa.fullmatch('a' * 1001))
+        self.assertTrue(pyre.fullmatch('a{1000}', 'a' * 1000))
+
+    def test_groups_take_the_last_iteration_like_re(self):
+        # A body that can match empty still takes an iteration, as re's
+        # greedy repeat does
+        for pattern, text in [('(a?){0,2}c?', ''), ('(a?){0,3}c?', 'aa'),
+                              ('(a*){0,2}c?', 'a'), ('(ab|a)(b?){0,2}c?', 'ac')]:
+            with self.subTest(pattern=pattern, text=text):
+                m = re.fullmatch(pattern, text)
+                want = {g: m.span(g) for g in range(m.re.groups + 1)}
+                got = {g: spans[-1] for g, spans in pyre.fullmatch(pattern, text).items()}
+                self.assertEqual(got, want)
+
+
 class TestNestedRepeat(RegexTestCase):
     """
     Nested repeats simplify to the star they amount to, so their DFAs are
