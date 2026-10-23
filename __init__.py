@@ -4,7 +4,7 @@ pyre - A Regular Expression Engine Based on Derivatives
 
 from typing import Dict, Iterable, List, Tuple, Union
 
-from .dfa import compile as _compile_dfa, lexer as _lexer_dfa, DFA, Token
+from .dfa import compile as _compile_dfa, lexer as _lexer_dfa, DFA, LexError, Token
 from .regex import Regex
 from . import parser as _parser
 from .parser import PatternError
@@ -86,5 +86,6 @@ __all__ = [
     'equal',
     'subset',
     'PatternError',
+    'LexError',
     'Token',
 ]

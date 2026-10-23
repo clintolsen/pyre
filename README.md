@@ -262,6 +262,11 @@ Token('NUMBER', '42', 5, 7) 42 None
 
 `token.groups` gives the spans in the same form `match()` returns them.
 
+Where no rule matches, `lex()` raises `pyre.LexError`, a `ValueError`, after
+yielding the tokens before that point. Like `PatternError`, it carries `text`,
+`pos`, `lineno` and `colno`. To pass unknown characters through instead, end
+the rules with a catch-all such as `('OTHER', '.')`, as `calc` does.
+
 ---
 
 ## Powerful Set Operators

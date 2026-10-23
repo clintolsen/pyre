@@ -168,6 +168,17 @@ class TestLexer(unittest.TestCase):
                           ('OTHER', '→'.encode(), 5, 8)])
         self.assertEqual(tokens[0].group('first'), 'α'.encode())
 
+    def test_error_position_counts_like_the_text(self):
+        rules = [('WORD', '[α-ω]+'), ('SPACE', r'\ +')]
+        with self.assertRaises(pyre.LexError) as cm:
+            list(pyre.lexer(rules).lex('αβ →'))
+        self.assertEqual((cm.exception.pos, cm.exception.text[cm.exception.pos]), (3, '→'))
+
+        with self.assertRaises(pyre.LexError) as cm:
+            list(pyre.lexer(rules).lex('αβ '.encode() + b'\xff'))
+        self.assertEqual(cm.exception.pos, 5)
+        self.assertEqual(str(cm.exception), "no rule matches b'\\xff' at position 5")
+
 
 class TestAgainstRe(unittest.TestCase):
     """Random patterns agree with Python's re on mixed-script text."""

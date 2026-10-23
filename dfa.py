@@ -338,8 +338,8 @@ class DFA:
     def lex(self, text):
         """
         Split text into tokens, taking the longest match and the earliest
-        rule on ties. Yields a Token for each, and stops where nothing
-        matches.
+        rule on ties. Yields a Token for each, and raises LexError where
+        nothing matches, after the tokens before it.
 
         A DFA built by lexer() names each token after the rule that matched,
         and runs the capture pass only if the token's groups are read. A
@@ -353,7 +353,7 @@ class DFA:
             end, rule = self._end(data, index)
 
             if end is None:
-                break
+                raise self._lex_error(text, index, 'no rule matches')
 
             if self.names:
                 yield Token(self.names[rule], text, index, end, self, rule)
@@ -369,15 +369,43 @@ class DFA:
                         kind = gid
 
                 if not kind:
-                    break
+                    raise self._lex_error(text, index, 'no named group spans the match of')
 
                 yield Token(kind, text, index, end, self, rule, text.spans(groups))
 
             index = end
 
+    @staticmethod
+    def _lex_error(text, index, msg):
+        pos = text.index(index)
+        source = text.text
+        if not isinstance(source, str):
+            source = bytes(source)
+        return LexError(f'{msg} {source[pos:pos + 1]!r}', source, pos)
+
     def isempty(self):
         """Returns True if the language of this DFA is empty (no reachable accepting states)."""
         return all(state.accept is None for state in self.states)
+
+
+class LexError(ValueError):
+    """
+    Raised by DFA.lex() at text it can't split into tokens. Like
+    PatternError, it carries the text and the position, which counts bytes
+    in bytes text, with lineno and colno counted from 1.
+    """
+    def __init__(self, msg, text, pos):
+        self.msg = msg
+        self.text = text
+        self.pos = pos
+        self.lineno, self.colno = util.line_col(text, pos)
+
+        message = f'{msg} at position {pos}'
+        newline = '\n' if isinstance(text, str) else b'\n'
+        if newline in text:
+            message += f' (line {self.lineno}, column {self.colno})'
+
+        super().__init__(message)
 
 
 class Token:

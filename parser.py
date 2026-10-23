@@ -19,6 +19,7 @@ import unicodedata
 
 from . import event
 from . import regex
+from . import util
 
 # Binding powers, higher binds tighter. Binary operators are left
 # associative, so each right power is one more than its left power.
@@ -105,8 +106,7 @@ class PatternError(ValueError):
         self.msg = msg
         self.pattern = pattern
         self.pos = pos
-        self.lineno = pattern.count('\n', 0, pos) + 1
-        self.colno = pos - (pattern.rfind('\n', 0, pos) + 1) + 1
+        self.lineno, self.colno = util.line_col(pattern, pos)
 
         message = f'{msg} at position {pos}'
         if '\n' in pattern:

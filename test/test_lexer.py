@@ -35,9 +35,31 @@ class TestLexer(unittest.TestCase):
         self.assertEqual(self.lex('if x'), [('IF', 'if'), ('WS', ' '), ('ID', 'x')])
         self.assertEqual(self.lex('if', [('ID', '[a-z]+'), ('IF', 'if')]), [('ID', 'if')])
 
-    def test_stops_where_nothing_matches(self):
-        """Lexing ends at text no rule matches."""
-        self.assertEqual(self.lex('x 1 @ y'), [('ID', 'x'), ('WS', ' '), ('NUMBER', '1'), ('WS', ' ')])
+    def test_raises_where_nothing_matches(self):
+        """Text no rule matches raises LexError, after the tokens before it."""
+        tokens = []
+        with self.assertRaises(pyre.LexError) as cm:
+            for t in pyre.lexer(self.RULES).lex('x 1 @ y'):
+                tokens.append((t.kind, t.text))
+
+        self.assertEqual(tokens, [('ID', 'x'), ('WS', ' '), ('NUMBER', '1'), ('WS', ' ')])
+        self.assertEqual(cm.exception.pos, 4)
+        self.assertEqual(cm.exception.text, 'x 1 @ y')
+        self.assertEqual(str(cm.exception), "no rule matches '@' at position 4")
+        self.assertTrue(issubclass(pyre.LexError, ValueError))
+
+    def test_error_has_line_and_column(self):
+        with self.assertRaises(pyre.LexError) as cm:
+            list(pyre.lexer(self.RULES).lex('x\n  y@'))
+        self.assertEqual((cm.exception.lineno, cm.exception.colno), (2, 4))
+        self.assertIn('(line 2, column 4)', str(cm.exception))
+
+    def test_single_pattern_needs_a_named_group(self):
+        """A match no named group spans is an error too."""
+        dfa = pyre.compile('(?P<ID>[a-z]+)|[0-9]+')
+        with self.assertRaises(pyre.LexError) as cm:
+            list(dfa.lex('ab12'))
+        self.assertEqual(cm.exception.pos, 2)
 
     def test_nullable_rule_needs_text(self):
         """A rule that matches the empty string never yields an empty token."""
