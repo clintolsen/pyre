@@ -30,11 +30,6 @@ def main(argv=None):
         default=True,
         help='Disable greedy matching (default: greedy)'
     )
-    argparser.add_argument(
-        '--all', '-a',
-        action='store_true',
-        help='Return all matches'
-    )
     argparser.add_argument('regex', help='Regular expression')
     argparser.add_argument('target', help='String or file to search', nargs='?')
 
@@ -51,7 +46,7 @@ def main(argv=None):
         if target.is_file():
             try:
                 data = target.read_bytes()
-                groups = search(args.regex, data, all=args.all, greedy=args.greedy)
+                groups = search(args.regex, data, all=True, greedy=args.greedy)
             except (OSError, ValueError) as e:
                 LOG.error(e)
                 return 2

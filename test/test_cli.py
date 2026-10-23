@@ -25,7 +25,7 @@ class TestFile(unittest.TestCase):
             return run(*flags, pattern, str(path))
 
     def test_highlights_every_match(self):
-        result = self.search('ab', b'xab ab\n', '-a')
+        result = self.search('ab', b'xab ab\n')
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, b'x' + ON + b'ab' + OFF + b' ' + ON + b'ab' + OFF + b'\n')
 

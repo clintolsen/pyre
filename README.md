@@ -69,7 +69,7 @@ Requires **Python 3.9+**. There are no other dependencies.
 ## Command Line Usage
 
 ```bash
-pyre [-h] [--debug] [--no-greedy] [--all] regex [target]
+pyre [-h] [--debug] [--no-greedy] regex [target]
 ```
 
 Example:
