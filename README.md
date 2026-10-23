@@ -40,7 +40,7 @@ The project includes:
    Available via the Internet Archive (Wayback Machine):
    [https://web.archive.org/web/20171223232901/http://blog.errstr.com/2013/01/22/implementing-a-more-powerful-regex/](https://web.archive.org/web/20171223232901/http://blog.errstr.com/2013/01/22/implementing-a-more-powerful-regex/)
 2. **Regular-expression derivatives reexamined**
-  Matthew Owens, John Reppy, Aaron Turon
+  Scott Owens, John Reppy, Aaron Turon
    *Journal of Functional Programming*, Vol 19 Issue 2, March 2009
 3. **Design and Implementation of a validating XML parser in Haskell**
   Master's Thesis — Martin Schmidt
