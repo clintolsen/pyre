@@ -176,6 +176,11 @@ surrogates count as characters, as they do in Python's `re`, so a filename
 decoded with `surrogateescape` still matches. `\d`, `\w` and `\s` are ASCII
 only, like `re.ASCII`.
 
+As in Python's `re`, `\xhh`, `\uhhhh` and `\Uhhhhhhhh` name a character by its
+code point, with exactly 2, 4 or 8 hex digits, so `[\u03b1-\u03c9]` is `[α-ω]`.
+A printed pattern writes characters that aren't printable this way. `\N{name}`
+names one by its Unicode name instead, as in `\N{EM DASH}`.
+
 The complement `~r` matches the text that `r` doesn't, so it only ever matches
 whole characters too.
 

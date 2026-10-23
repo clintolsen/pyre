@@ -15,6 +15,8 @@
 # applies whenever the next character can start an operand.
 #
 
+import unicodedata
+
 from . import event
 from . import regex
 
@@ -82,6 +84,11 @@ _SETS = {
     's': (_SPACE_RANGES, False),
     'S': (_SPACE_RANGES, True),
 }
+
+# \xhh, \uhhhh and \Uhhhhhhhh: the number of hex digits each takes
+#
+_HEX_ESCAPES = {'x': 2, 'u': 4, 'U': 8}
+_HEX_DIGITS = frozenset('0123456789abcdefABCDEF')
 
 _NAME_START = frozenset('abcdefghijklmnopqrstuvwxyz'
                         'ABCDEFGHIJKLMNOPQRSTUVWXYZ_')
@@ -206,10 +213,10 @@ class _Parser:
 
         if ch == '\\':
             esc = self._escape(start)
-            if esc in _SETS:
-                ranges, negate = _SETS[esc]
+            if isinstance(esc, tuple):
+                ranges, negate = esc
                 return regex.RegexSym(ranges, negate=negate)
-            return regex.RegexSym(_CONTROL_ESCAPES.get(esc, esc))
+            return regex.RegexSym(esc)
 
         # Anything else, '-' included, is a literal
         #
@@ -371,19 +378,71 @@ class _Parser:
 
         esc = self._escape(self.pos - 1)
 
-        if esc in _SETS:
-            ranges, negate = _SETS[esc]
+        if isinstance(esc, tuple):
+            ranges, negate = esc
             return regex.invert_ranges(ranges) if negate else ranges
 
-        return _CONTROL_ESCAPES.get(esc, esc)
+        return esc
 
     def _escape(self, start):
-        """ After '\\'. Returns the escaped character, taken as is. """
-        if self.pos >= len(self.text):
+        """
+        After '\\'. Returns the character the escape stands for, or
+        (ranges, negate) for \\d \\w \\s and their negations. Any other
+        character is taken as is.
+        """
+        text = self.text
+        if self.pos >= len(text):
             self._error('bad escape (end of pattern)', start)
 
-        ch = self.text[self.pos]
+        ch = text[self.pos]
         self.pos += 1
+
+        if ch in _SETS:
+            return _SETS[ch]
+
+        if ch in _HEX_ESCAPES:
+            end = self.pos
+            while (end < len(text) and end - self.pos < _HEX_ESCAPES[ch]
+                   and text[end] in _HEX_DIGITS):
+                end += 1
+            digits = text[self.pos:end]
+            if len(digits) < _HEX_ESCAPES[ch]:
+                self._error(f'incomplete escape \\{ch}{digits}', start)
+            self.pos = end
+            code = int(digits, 16)
+            if code > regex.MAX_CODE_POINT:
+                self._error(f'bad escape \\{ch}{digits}', start)
+            return chr(code)
+
+        if ch == 'N':
+            return self._named_char(start)
+
+        return _CONTROL_ESCAPES.get(ch, ch)
+
+    def _named_char(self, start):
+        """ After '\\N'. Reads {name} and returns the character it names. """
+        text = self.text
+        if not text.startswith('{', self.pos):
+            self._error('missing {')
+
+        first = self.pos + 1
+        end = text.find('}', first)
+        if end == first or first == len(text):
+            self._error('missing character name', first)
+        if end < 0:
+            self._error('missing }, unterminated name', first)
+
+        name = text[first:end]
+        try:
+            ch = unicodedata.lookup(name)
+        except KeyError:
+            ch = ''
+        # A named sequence names several characters
+        #
+        if len(ch) != 1:
+            self._error(f'undefined character name {name!r}', start)
+
+        self.pos = end + 1
         return ch
 
     def _repeat_spec(self, start):

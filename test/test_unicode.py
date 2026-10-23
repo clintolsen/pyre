@@ -59,6 +59,44 @@ class TestCharacters(unittest.TestCase):
         self.assertEqual(str(pyre.parse('[^a]')), '[^a]')
 
 
+class TestEscapes(unittest.TestCase):
+    """\\xhh, \\uhhhh, \\Uhhhhhhhh and \\N{name} name a character, as in Python's re."""
+
+    def test_escapes_name_code_points(self):
+        for pattern, ch in [(r'\x41', 'A'), (r'\xe9', 'é'), (r'\u03bb', 'λ'),
+                            (r'\U0001F642', '🙂'), (r'\U0010FFFF', '\U0010ffff'),
+                            (r'\ud800', '\ud800'), (r'\x00', '\x00')]:
+            with self.subTest(pattern=pattern):
+                self.assertEqual(pyre.fullmatch(pattern, ch), {0: [(0, 1)]})
+
+    def test_escapes_in_classes(self):
+        self.assertTrue(pyre.fullmatch(r'[\u03b1-\u03c9]+', 'λογος'))
+        self.assertFalse(pyre.fullmatch(r'[\u03b1-\u03c9]', 'a'))
+        self.assertTrue(pyre.fullmatch(r'[^\x00-\x7f]', 'é'))
+
+    def test_escaped_letter_is_not_a_set(self):
+        # \x64 is 'd', not \d
+        self.assertTrue(pyre.fullmatch(r'\x64', 'd'))
+        self.assertFalse(pyre.fullmatch(r'\x64', '1'))
+        self.assertFalse(pyre.fullmatch(r'[\x64]', '1'))
+
+    def test_takes_only_its_digits(self):
+        self.assertTrue(pyre.fullmatch(r'\x411', 'A1'))
+        self.assertTrue(pyre.fullmatch(r'\u00e9e', 'ée'))
+
+    def test_named_characters(self):
+        self.assertTrue(pyre.fullmatch(r'\N{EM DASH}+', '——'))
+        self.assertTrue(pyre.fullmatch(r'\N{em dash}', '—'))
+        self.assertTrue(pyre.fullmatch(r'[a-\N{GREEK SMALL LETTER OMEGA}]+', 'λω'))
+
+    def test_printed_form_reparses(self):
+        for ch in ['\x00', '\x85', '\xa0', '\u200b', '\ud800', '\U000e0001']:
+            with self.subTest(ch=ch):
+                printed = str(pyre.parse(ch))
+                self.assertTrue(printed.isascii(), printed)
+                self.assertTrue(pyre.equal(printed, ch), printed)
+
+
 class TestComplement(unittest.TestCase):
     """~r is the valid UTF-8 text that r does not match."""
 

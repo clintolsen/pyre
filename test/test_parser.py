@@ -142,6 +142,20 @@ class TestErrors(unittest.TestCase):
         self.assert_error('a\\', 1)
         self.assert_error('[a\\', 2)
 
+    def test_hex_escapes(self):
+        self.assert_error(r'a\x4', 1)
+        self.assert_error(r'\x4z', 0)
+        self.assert_error(r'[\u12]', 1)
+        self.assert_error(r'\U00110000', 0)
+
+    def test_named_escapes(self):
+        self.assert_error(r'a\N', 3)
+        self.assert_error(r'a\N{}', 4)
+        self.assert_error(r'a\N{EM DASH', 4)
+        self.assert_error(r'a\N{NO SUCH CHARACTER}', 1)
+        # A named sequence is more than one character
+        self.assert_error(r'\N{LATIN CAPITAL LETTER A WITH MACRON AND GRAVE}', 0)
+
     def test_nesting_limit(self):
         pyre.parse('(' * 100 + 'a' + ')' * 100)
         pyre.parse('~' * 100 + 'a')
