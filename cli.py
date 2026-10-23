@@ -50,35 +50,29 @@ def main(argv=None):
         target = Path(args.target)
         if target.is_file():
             try:
-                with open(target) as f:
-                    file = f.read()
-
-                groups = search(args.regex, file, all=args.all, greedy=args.greedy)
+                data = target.read_bytes()
+                groups = search(args.regex, data, all=args.all, greedy=args.greedy)
             except (OSError, ValueError) as e:
                 LOG.error(e)
                 return 2
 
             LOG.debug(f'Groups: {groups}')
             flatten = [interval for group in groups.values() for interval in group]
-            intervals = list(regex.merge_ranges(flatten, closed=False))
+            intervals = regex.merge_ranges(flatten, closed=False)
             LOG.debug(f'Merged intervals: {intervals}')
 
+            # Write the file's own bytes, so text that isn't UTF-8 passes
+            # through unchanged
+            #
+            sys.stdout.flush()
+            out = sys.stdout.buffer
             i = 0
-            while i < len(file):
-                begin = -1
-                end = -1
-
-                if intervals:
-                    begin, end = intervals.pop(0)
-
-                print(file[i:begin], end='')
-
-                if begin > -1:
-                    print(util.highlight(file[begin:end]), end='')
-                    i = end
-                else:
-                    print()
-                    break
+            for begin, end in intervals:
+                out.write(data[i:begin])
+                out.write(util.highlight(data[begin:end]))
+                i = end
+            out.write(data[i:])
+            out.flush()
         else:
             try:
                 groups = fullmatch(args.regex, args.target)

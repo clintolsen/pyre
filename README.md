@@ -78,8 +78,10 @@ Example:
 pyre 'lex' test.cpp
 ```
 
-With a file, `pyre` prints it with every match highlighted. Otherwise `target`
-is a string, and `pyre` prints the groups of a full match against it. Like
+With a file, `pyre` prints it with every match highlighted. The file is read
+and printed as bytes, so it needn't be valid UTF-8; bytes that aren't are
+printed as they are and never match. Otherwise `target` is a string, and `pyre`
+prints the groups of a full match against it. Like
 `grep`, it exits with 0 if the pattern matched, 1 if it did not, and 2 for an
 error such as a bad pattern.
 
@@ -329,6 +331,7 @@ start anchor. `-` is a literal wherever an operand begins, so `-a` matches
  │   ├── test_basic.py
  │   ├── test_boolean.py
  │   ├── test_capture.py
+ │   ├── test_cli.py
  │   ├── test_common.py
  │   ├── test_lexer.py
  │   ├── test_parser.py
