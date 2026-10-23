@@ -1,5 +1,7 @@
 # pyre/test/test_boolean.py
 
+import functools
+import operator
 import unittest
 import sys
 from pathlib import Path
@@ -333,6 +335,45 @@ class TestBooleanOps(RegexTestCase):
         # Superset is not a subset of its strict subset
         self.assertFalse(pyre.subset("a(b|c)", "ab"))
         self.assertFalse(pyre.subset(pyre.parse("a(b|c)"), pyre.parse("ab")))
+
+class TestDifferenceChains(RegexTestCase):
+    """
+    r - s - t is one node holding r and everything removed from it, as |
+    holds its alternatives, so chains stay one level deep
+    """
+
+    def test_spellings_are_one_node(self):
+        chain = pyre.parse('a-b-c')
+        self.assertEqual(chain.args, tuple(pyre.parse(x) for x in 'abc'))
+        for pattern in ['(?:a-b)-c', 'a-(?:b|c)', '(?:a-c)-b', 'a-b-c-b']:
+            with self.subTest(pattern=pattern):
+                self.assertIs(pyre.parse(pattern), chain)
+        self.assertEqual(str(chain), 'a - b - c')
+
+    def test_right_nesting_stays(self):
+        # a - (b - c) keeps c in the result, so it is not a chain
+        self.assertTrue(pyre.fullmatch('[a-c]-(?:[bc]-c)', 'c'))
+        self.assertFalse(pyre.fullmatch('[a-c]-b-c', 'c'))
+
+    def test_removing_the_first_operand_is_empty(self):
+        self.assertTrue(pyre.isempty('a-b-a'))
+
+    def test_matches(self):
+        for pattern in ['[a-z]+-if-else-for', '(?:[a-z]+-if)-(?:else|for)', '[a-z]+-(?:if|else|for)']:
+            for text in ['if', 'else', 'for', 'iff', 'x']:
+                with self.subTest(pattern=pattern, text=text):
+                    self.assertEqual(bool(pyre.fullmatch(pattern, text)), text in ('iff', 'x'))
+
+    def test_only_the_first_operand_reports_groups(self):
+        self.assertEqual(pyre.fullmatch('(x)-(y)-z', 'x'), {0: [(0, 1)], 1: [(0, 1)]})
+
+    def test_long_chain(self):
+        words = [pyre.parse('[a-z]+')] + [pyre.parse('w%d' % i) for i in range(500)]
+        chain = functools.reduce(operator.sub, words)
+        self.assertEqual(len(chain.args), 501)
+        self.assertTrue(pyre.fullmatch(chain, 'abc'))
+        str(chain)
+
 
 if __name__ == "__main__":
     unittest.main()

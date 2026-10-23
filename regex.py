@@ -1250,18 +1250,16 @@ class RegexDiff(Regex):
 
     ν(r-s) = ν(r) - ν(s)
 
+    The first operand is what may match, and every later one is removed
+    from it, so r - s - t is r with both s and t removed.
     '''
     sym = '-'
 
     def __new__(cls, left, right, **kwargs):
-        # r - r = ∅
-        #
-        if left is right:
-            return RegexEmpty()
-
         # ∅ - r = ∅
+        # r - ¬∅ = ∅
         #
-        if left.isempty:
+        if left.isempty or right.isany:
             return RegexEmpty()
 
         # r - ∅ = r
@@ -1274,29 +1272,44 @@ class RegexDiff(Regex):
         if left.isany:
             return RegexNot(right)
 
-        # r - ¬∅ = ∅
+        # (r - s) - t = r - s - t, and r - (s + t) = r - s - t. What is
+        # removed is a set, kept flat as | keeps its alternatives, so a
+        # chain of differences is one level deep and the ways of writing
+        # one are one node. Only the first operand reports groups, so the
+        # rest are free to merge whether or not they have captures.
         #
-        if right.isany:
+        if isinstance(left, RegexDiff):
+            first, *removed = left.args
+        else:
+            first, removed = left, []
+        removed = Regex.unique(removed + Regex.get_args(right, RegexOr))
+
+        # r - r = ∅
+        #
+        if first in removed:
             return RegexEmpty()
 
-        key = (cls, left, right, frozenset(kwargs.items()))
+        args = (first, *removed)
+        key = (cls, first, frozenset(removed), frozenset(kwargs.items()))
 
         def init(self):
-            self.args = (left, right)
+            self.args = args
             self.charset = left.charset & right.charset
 
         return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
-            left, right = self.args
-            self._nullable = RegexDiff(left.nullable(), right.nullable())
+            first, *removed = self.args
+            if first.isnullable() and not any(arg.isnullable() for arg in removed):
+                self._nullable = RegexEpsilon()
+            else:
+                self._nullable = RegexEmpty()
 
         return self._nullable
 
     def _derive(self, ch):
-        left, right = self.args
-        return RegexDiff(left.derive(ch), right.derive(ch))
+        return functools.reduce(RegexDiff, [arg.derive(ch) for arg in self.args])
 
     def __str__(self):
         return self.join(f' {RegexDiff.sym} ')

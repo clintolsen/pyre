@@ -14,11 +14,13 @@
 # higher-priority one survives, Pike VM style. Markers are therefore only
 # reported for the branch that actually accepts.
 #
-# Negated operands (the right side of r - s, all of ~r) describe strings that
-# must not match, so they are derived as opaque Brzozowski terms and never
-# contribute markers. Xor is split into (r - s) | (s - r) so the side that
-# matched keeps its captures.
+# Negated operands (all but the first of r - s, and all of ~r) describe
+# strings that must not match, so they are derived as opaque Brzozowski
+# terms and never contribute markers. Xor is split into (r - s) | (s - r)
+# so the side that matched keeps its captures.
 #
+
+import functools
 
 from . import event
 from . import regex as rx
@@ -122,10 +124,10 @@ def _nullable_markers(e):
         return nullable_markers(e.expr)
 
     if isinstance(e, rx.RegexDiff):
-        left, right = e.args
-        if right.isnullable():
+        first, *removed = e.args
+        if any(arg.isnullable() for arg in removed):
             return None
-        return nullable_markers(left)
+        return nullable_markers(first)
 
     if isinstance(e, rx.RegexNot):
         return None if e.expr.isnullable() else ()
@@ -218,9 +220,9 @@ def _derive_branches(e, ch):
         return out
 
     if isinstance(e, rx.RegexDiff):
-        left, right = e.args
-        negated = right.derive(ch)
-        return [(m, rx.RegexDiff(t, negated)) for m, t in derive_branches(left, ch)]
+        first, *removed = e.args
+        negated = [arg.derive(ch) for arg in removed]
+        return [(m, functools.reduce(rx.RegexDiff, [t] + negated)) for m, t in derive_branches(first, ch)]
 
     if isinstance(e, rx.RegexNot):
         return [((), e.derive(ch))]
