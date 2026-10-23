@@ -486,49 +486,12 @@ class _Parser:
 
     @staticmethod
     def _repeat(expr, spec):
-        """
-        Expand r{...} into concatenations and optionals. As in RE2, r{m,n}
-        is m copies of r and then n - m nested optionals, so r{2,4} is
-        r·r·(r·r?)?. That grows linearly with n, matches each length one
-        way, and its derivative by r is the same form one level shorter.
-        """
-
-        # A concatenation of num copies, built by doubling so that each
-        # step copies the operands only once
-        #
-        def make_cat(expr, num):
-            out = regex.RegexEpsilon()
-            power = expr
-            while num:
-                if num & 1:
-                    out = regex.RegexConcat(out, power)
-                num >>= 1
-                if num:
-                    power = regex.RegexConcat(power, power)
-            return out
-
-        # Up to num more copies: (r·(r·…r?)?)?
-        #
-        def make_opt(expr, num):
-            out = regex.RegexEpsilon()
-            for _ in range(num):
-                out = regex.RegexOpt(regex.RegexConcat(expr, out))
-            return out
-
+        """ r{n}, r{m,}, r{,n} and r{m,n} as one counted repeat node. """
         if isinstance(spec, int):
-            return make_cat(expr, spec)
+            return regex.RegexRepeat(expr, spec, spec)
 
         lo, hi = spec
-        lo = lo or 0
-
-        # {m,}  →  r^m·r*
-        #
-        if hi is None:
-            return regex.RegexConcat(make_cat(expr, lo), regex.RegexStar(expr))
-
-        # {m,n}  →  r^m then up to n - m more
-        #
-        return regex.RegexConcat(make_cat(expr, lo), make_opt(expr, hi - lo))
+        return regex.RegexRepeat(expr, lo or 0, hi)
 
     # Scanning
     #

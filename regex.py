@@ -201,6 +201,7 @@ class Regex:
         'RegexStar': 7,
         'RegexPlus': 7,
         'RegexOpt': 7,
+        'RegexRepeat': 7,
     }
 
     # Operators where (a op b) op c and a op (b op c) are the same
@@ -1025,6 +1026,103 @@ class RegexOpt(Regex):
 
     def __str__(self):
         return f'{self.paren(self.expr)}{RegexOpt.sym}'
+
+
+class RegexRepeat(Regex):
+    '''Counted repeat: r{m,n} - Match m to n occurrences of RE r, or at
+    least m when n is None.
+
+    ∂𝑎(r{m,n}) = ∂𝑎(r)·r{m-1,n-1}
+               = ∂𝑎(r)·r{0,n-1} when r is nullable
+    ν(r{m,n}) = ε if m = 0 or ν(r) = ε, 0 otherwise
+
+    As in .NET's NonBacktracking engine and RE#, the count stays in one
+    node rather than being expanded, so r{0,1000} is one level deep and
+    each derivative peels off one occurrence. Here m - 1 stops at 0, and
+    n - 1 at None stays None.
+    '''
+
+    def __new__(cls, expr, lo, hi, **kwargs):
+        if hi == 0 or expr.isepsilon:
+            return RegexEpsilon()
+
+        if expr.isempty:
+            return RegexEpsilon() if lo == 0 else RegexEmpty()
+
+        # Every occurrence of a nullable r may match empty, so r{m,n} is
+        # r^n and r{m,} is r*. r^n is a flat concatenation, one level deep,
+        # and its derivatives keep the shared r·r·… factored, so partial
+        # matches with different counts still merge into one state; as a
+        # counted repeat they would not. Not with captures, which report a
+        # group from the occurrence that matched it.
+        #
+        if not expr.hascaptures and expr.isnullable():
+            if hi is None:
+                return RegexStar(expr)
+            return RegexRepeat._power(expr, hi)
+
+        if hi is None:
+            if lo == 0:
+                return RegexStar(expr)
+            if lo == 1:
+                return RegexPlus(expr)
+        elif (lo, hi) == (0, 1):
+            return RegexOpt(expr)
+        elif (lo, hi) == (1, 1):
+            return expr
+
+        key = (cls, expr, lo, hi, frozenset(kwargs.items()))
+
+        def init(self):
+            self.expr = expr
+            self.lo = lo
+            self.hi = hi
+            self.args = (expr,)
+            self.charset = self.expr.charset
+            if hi is None:
+                self.sym = f'{{{lo},}}'
+            elif lo == hi:
+                self.sym = f'{{{lo}}}'
+            else:
+                self.sym = f'{{{lo},{hi}}}'
+
+        return cls._intern(key, init)
+
+    @staticmethod
+    def _power(expr, n):
+        ''' n copies of expr concatenated, built by doubling '''
+        out = RegexEpsilon()
+        while n:
+            if n & 1:
+                out = RegexConcat(out, expr)
+            n >>= 1
+            if n:
+                expr = RegexConcat(expr, expr)
+        return out
+
+    def rest(self):
+        ''' What follows the first occurrence: r{m-1,n-1}, or r{0,n-1} '''
+        lo = 0 if self.expr.isnullable() else max(self.lo - 1, 0)
+        hi = None if self.hi is None else self.hi - 1
+        return RegexRepeat(self.expr, lo, hi)
+
+    def _without_captures(self):
+        if not self.hascaptures:
+            return self
+        if self._stripped is None:
+            self._stripped = RegexRepeat(self.expr._without_captures(), self.lo, self.hi)
+        return self._stripped
+
+    def nullable(self):
+        if self.lo == 0:
+            return RegexEpsilon()
+        return self.expr.nullable()
+
+    def _derive(self, ch):
+        return RegexConcat(self.expr.derive(ch), self.rest())
+
+    def __str__(self):
+        return f'{self.paren(self.expr)}{self.sym}'
 
 
 class RegexDot(RegexCodePoints):

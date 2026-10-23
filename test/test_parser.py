@@ -33,11 +33,11 @@ class TestPrecedence(unittest.TestCase):
     def test_postfix_binds_tighter_than_concat(self):
         self.assertIs(pyre.parse('ab*'), rx.RegexConcat(a, rx.RegexStar(b)))
         self.assertIs(pyre.parse('ab{2}'),
-                      rx.RegexConcat(a, rx.RegexConcat(b, b)))
+                      rx.RegexConcat(a, rx.RegexRepeat(b, 2, 2)))
 
     def test_complement(self):
         self.assertIs(pyre.parse('~a*'), rx.RegexNot(rx.RegexStar(a)))
-        self.assertIs(pyre.parse('~a{2}'), rx.RegexNot(rx.RegexConcat(a, a)))
+        self.assertIs(pyre.parse('~a{2}'), rx.RegexNot(rx.RegexRepeat(a, 2, 2)))
         self.assertIs(pyre.parse('~a+b'),
                       rx.RegexConcat(rx.RegexNot(rx.RegexPlus(a)), b))
         self.assertIs(pyre.parse('~ab'), rx.RegexConcat(rx.RegexNot(a), b))

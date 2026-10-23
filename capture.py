@@ -114,9 +114,12 @@ def _nullable_markers(e):
     if isinstance(e, rx.RegexPlus):
         return nullable_markers(e.expr)
 
-    if isinstance(e, rx.RegexOpt):
+    if isinstance(e, rx.RegexOpt) or (isinstance(e, rx.RegexRepeat) and e.lo == 0):
         inner = nullable_markers(e.expr)
         return inner if inner is not None else ()
+
+    if isinstance(e, rx.RegexRepeat):
+        return nullable_markers(e.expr)
 
     if isinstance(e, rx.RegexDiff):
         if e.right.isnullable():
@@ -194,6 +197,13 @@ def _derive_branches(e, ch):
 
     if isinstance(e, rx.RegexOpt):
         return derive_branches(e.expr, ch)
+
+    # The first occurrence takes the character, as a greedy repeat does,
+    # and the rest follows it
+    #
+    if isinstance(e, rx.RegexRepeat):
+        rest = e.rest()
+        return [(m, rx.RegexConcat(t, rest)) for m, t in derive_branches(e.expr, ch)]
 
     if isinstance(e, rx.RegexAnd):
         out = derive_branches(e.args[0], ch)

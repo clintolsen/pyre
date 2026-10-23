@@ -127,16 +127,42 @@ class TestRepeat(RegexTestCase):
 
         self.assert_search_same_as_re(pattern, text)
 
-class TestCountedRepeatExpansion(RegexTestCase):
+class TestCountedRepeat(RegexTestCase):
     """
-    r{m,n} expands to m copies of r and then nested optionals, as in RE2,
-    so its size and DFA grow linearly with n
+    r{m,n} is one node, as in .NET's NonBacktracking engine and RE#, so its
+    size and depth don't grow with n, and each derivative peels off one
+    occurrence
     """
 
-    def test_nested_optionals(self):
-        self.assertIs(pyre.parse('a{2,4}'), pyre.parse('aa(?:a(?:a)?)?'))
-        self.assertIs(pyre.parse('a{,2}'), pyre.parse('(?:a(?:a)?)?'))
-        self.assertIs(pyre.parse('(?:ab){1,3}'), pyre.parse('ab(?:ab(?:ab)?)?'))
+    def test_one_node(self):
+        self.assertIs(pyre.parse('a{2,4}'), rx.RegexRepeat(pyre.parse('a'), 2, 4))
+        for pattern, printed in [('a{3}', 'a{3}'), ('a{2,}', 'a{2,}'), ('a{,1000}', 'a{0,1000}'),
+                                 ('(?:ab){2,4}', '(a·b){2,4}')]:
+            with self.subTest(pattern=pattern):
+                self.assertEqual(str(pyre.parse(pattern)), printed)
+
+    def test_derivative_peels_one_occurrence(self):
+        a = pyre.parse('a')
+        self.assertIs(rx.RegexRepeat(a, 2, 4).derive('a'), rx.RegexRepeat(a, 1, 3))
+        self.assertIs(rx.RegexRepeat(a, 0, 2).derive('a'), rx.RegexOpt(a))
+        self.assertIs(rx.RegexRepeat(a, 3, None).derive('a'), rx.RegexRepeat(a, 2, None))
+        self.assertIs(rx.RegexRepeat(a, 2, None).derive('a'), rx.RegexPlus(a))
+
+    def test_simple_counts(self):
+        a = pyre.parse('a')
+        self.assertIs(pyre.parse('a{0,}'), rx.RegexStar(a))
+        self.assertIs(pyre.parse('a{1,}'), rx.RegexPlus(a))
+        self.assertIs(pyre.parse('a{0,1}'), rx.RegexOpt(a))
+        self.assertIs(pyre.parse('a{1}'), a)
+        self.assertIs(pyre.parse('a{0}'), rx.RegexEpsilon())
+        # A nullable body needs no minimum
+        self.assertIs(pyre.parse('(?:a?){2,3}'), pyre.parse('(?:a?){0,3}'))
+
+    def test_large_counts(self):
+        for pattern in ['(a){0,1000}', '(?:ab){1000,}', 'a{500,1000}']:
+            with self.subTest(pattern=pattern):
+                str(pyre.parse(pattern))
+                self.assertTrue(pyre.fullmatch(pattern, 'a' * 1000 if 'b' not in pattern else 'ab' * 1000))
 
     def test_large_bounds(self):
         # The flat alternation this replaced took cubic time to build
