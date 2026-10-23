@@ -111,6 +111,20 @@ class TestComplement(unittest.TestCase):
         self.assertTrue(pyre.isempty('~(?:.*)~(?:.*)'))
         self.assertEqual(pyre.fullmatch('~(?:.*)~(?:.*)', '→'), {})
 
+    def test_everything_is_one_node(self):
+        """¬∅ and .* are the same language, so they build the same node."""
+        everything = pyre.parse('.*')
+        self.assertIs(rx.RegexNot(rx.RegexEmpty()), everything)
+        self.assertIs(pyre.parse('.*|a'), everything)
+        self.assertEqual(str(pyre.parse('.*|a')), '.*')
+        self.assertIs(pyre.parse('~(?:.*)'), rx.RegexEmpty())
+
+    def test_complement_of_everything_builds_no_extra_states(self):
+        # Before, the bytes after a lead byte left states holding
+        # x·¬∅ - x·.*, which is empty but not visibly so
+        self.assertEqual(len(pyre.compile('~(?:.*)').states), 1)
+        self.assertEqual(len(pyre.compile('~.+').states), 2)
+
     def test_set_operators(self):
         self.assertTrue(pyre.equal('~~é', 'é'))
         self.assertTrue(pyre.equal('.-a', '[^a]'))

@@ -661,7 +661,7 @@ class RegexOr(Regex):
         # right, so (a)|.* must keep reporting group 1 for "a".
         #
         if left.isany or (right.isany and not left.hascaptures):
-            return RegexNot(RegexEmpty())
+            return RegexStar(RegexDot())
 
         # 5) ∅ + r ≈ r
         #    r + ∅ ≈ r
@@ -1085,7 +1085,7 @@ class RegexConcat(Regex):
 
     # ∂𝑎(r·s) = ∂𝑎(r)·s + ν(r)·∂𝑎(s), applied to r1·…·rn grouped from the
     # left as ((r1·r2)·r3)·…, one operand at a time. Each step simplifies the
-    # derivative of the prefix as a whole, so (b*·.* | .*)·~. becomes ¬∅·~.
+    # derivative of the prefix as a whole, so (b*·.* | .*)·~. becomes .*·~.
     # Once the prefix is not nullable, the rest only gets concatenated.
     #
     def _derive(self, ch):
@@ -1183,13 +1183,21 @@ class RegexNot(Regex):
         if expr.isnot:
             return expr.expr
 
+        # .* is every valid string, so ¬∅ and .* are the same language. ¬∅
+        # is built as .*, so the two are one node and their derivatives
+        # one state, and ¬(.*) is ∅.
+        #
+        if expr.isempty:
+            return RegexStar(RegexDot())
+        if expr.isany:
+            return RegexEmpty()
+
         key = (cls, expr, frozenset(kwargs.items()))
 
         def init(self):
             self.expr = expr
             self.args = (expr,)
             self.charset = self.expr.charset & RegexDot().charset
-            self.isany = self.expr.isempty
             self.isnot = True
 
         return cls._intern(key, init)
@@ -1206,13 +1214,12 @@ class RegexNot(Regex):
     def _derive(self, ch):
         # After the first byte of a longer character, the rest of .* starts
         # with the rest of that character, so this is a difference until
-        # the character ends and RegexDiff turns ¬∅ - r back into ¬r. ¬∅
-        # rather than .*, so that when r is ∅ it is the same state too.
+        # the character ends and RegexDiff turns .* - r back into ¬r
         #
         rest = RegexDot().derive(ch)
         if rest.isepsilon:
             return RegexNot(self.expr.derive(ch))
-        return RegexDiff(RegexConcat(rest, RegexNot(RegexEmpty())), self.expr.derive(ch))
+        return RegexDiff(RegexConcat(rest, RegexStar(RegexDot())), self.expr.derive(ch))
 
     def __str__(self):
         return f'{RegexNot.sym}{self.paren(self.expr)}'
