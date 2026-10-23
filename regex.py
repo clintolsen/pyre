@@ -59,6 +59,7 @@ class Regex:
             self.id = Regex._id_count
 
             self._nullable = None
+            self._isnullable = None
             self._derivatives = {}
             self._stripped = None
 
@@ -99,8 +100,13 @@ class Regex:
     def nullable(self):
         return RegexEmpty()
 
+    # Kept as a flag, since nullable() on a leaf builds ∅ again each time,
+    # and subsumption asks this of every operand it compares
+    #
     def isnullable(self):
-        return self.nullable().isepsilon
+        if self._isnullable is None:
+            self._isnullable = self.nullable().isepsilon
+        return self._isnullable
 
     # Nodes are interned and immutable, so each derivative is computed once
     # per character and kept. Derivatives share subterms, and without this
@@ -301,51 +307,84 @@ class Regex:
     @staticmethod
     def _subsumes(x, y):
         '''
-        True if y is a suffix of the concatenation x and everything in x
-        before that suffix is nullable, so every string y matches x does too.
+        True if every string y matches x does too, as seen from their
+        operands. After a prefix u the two share, either x is u·p·s and y is
+        u·s, or x is u·p·.* and y is u followed by anything, where p is
+        nullable in both cases. u and p may be empty.
         '''
         if y.isepsilon:
             return x.isnullable()
 
         xs = x.args if isinstance(x, RegexConcat) else (x,)
         ys = y.args if isinstance(y, RegexConcat) else (y,)
-        k = len(xs) - len(ys)
+        if xs[0] is not ys[0] and not xs[0].isnullable():
+            return False
 
-        return k > 0 and xs[k:] == ys and all(p.isnullable() for p in xs[:k])
+        # The longest shared prefix is enough: anything a shorter one would
+        # leave in p is also nullable
+        #
+        n = 0
+        while n < len(xs) - 1 and n < len(ys) and xs[n] is ys[n]:
+            n += 1
+
+        if xs[-1].isany:
+            return all(p.isnullable() for p in xs[n:-1])
+
+        k = len(xs) - len(ys)
+        return k > 0 and xs[n + k:] == ys[n:] and all(p.isnullable() for p in xs[n:n + k])
 
     @staticmethod
     def _may_subsume(expr):
         '''
         False if no alternative in expr can subsume another: that takes one
-        that is nullable or a concatenation that starts with something
-        nullable. Keyword lists never qualify, so this skips the check.
+        that is nullable or a concatenation with a nullable operand. Keyword
+        lists never qualify, so this skips the check.
         '''
         if isinstance(expr, RegexOr):
             return expr.may_subsume
         return expr.isnullable() or (isinstance(expr, RegexConcat) and
-                                     expr.args[0].isnullable())
+                                     any(arg.isnullable() for arg in expr.args))
 
     @staticmethod
     def _subsumed(xs, ys):
         '''
         The alternatives in ys that some alternative in xs subsumes. Only a
         concatenation can subsume anything but ε, and only one that ends the
-        way y does, so xs is indexed by last operand.
+        way y does or ends in .*, so xs is indexed by last operand, with
+        None for .*.
         '''
         ends = {}
         for x in xs:
             if isinstance(x, RegexConcat):
-                ends.setdefault(x.args[-1], []).append(x)
+                last = None if x.args[-1].isany else x.args[-1]
+                ends.setdefault(last, []).append(x)
+        anys = ends.get(None, [])
 
         out = set()
         for y in ys:
             if y.isepsilon:
                 candidates = xs
             else:
-                candidates = ends.get(y.args[-1] if isinstance(y, RegexConcat) else y, ())
-            if any(x is not y and Regex._subsumes(x, y) for x in candidates):
-                out.add(y)
+                candidates = ends.get(y.args[-1] if isinstance(y, RegexConcat) else y, [])
+                if anys:
+                    candidates = candidates + anys
+            for x in candidates:
+                if x is not y and Regex._subsumes(x, y) and Regex._keeps(x, y):
+                    out.add(y)
+                    break
         return out
+
+    @staticmethod
+    def _keeps(x, y):
+        '''
+        True if x should stay in place of y, once x is known to subsume y.
+        When y also subsumes x, as x·.* and x·a*·.* do, the two are the same
+        language, so this keeps the one with fewer operands, or the older
+        one, whichever side of the | each is on.
+        '''
+        if not Regex._subsumes(y, x):
+            return True
+        return (len(x.args), x.id) < (len(y.args), y.id)
 
     @staticmethod
     def get_args(expr, expr_type):
@@ -717,9 +756,11 @@ class RegexOr(Regex):
 
         # Beyond the paper's rules, s + p·s ≈ p·s when p is nullable, since
         # then L(s) ⊆ L(p·s). ε + r ≈ r when r is nullable is the case where
-        # s is empty. This only shrinks DFAs; the paper's rules are what make
-        # them finite. Only without captures, where dropping an alternative
-        # cannot change which one reports groups.
+        # s is empty. Both sides may also start with the same prefix u, and
+        # u·t + u·p·.* ≈ u·p·.* for any t. This only shrinks DFAs; the
+        # paper's rules are what make them finite. Only without captures,
+        # where dropping an alternative cannot change which one reports
+        # groups.
         #
         # Each side was already reduced when it was built, so only pairs
         # with one alternative from each side need checking. Checking every

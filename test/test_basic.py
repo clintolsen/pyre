@@ -149,6 +149,19 @@ class TestSimplification(RegexTestCase):
         self.assertIs(pyre.parse("b|a?b"), pyre.parse("a?b"))
         self.assertIs(pyre.parse("ε|a*"), pyre.parse("a*"))
 
+    def test_alternative_covered_after_shared_prefix_is_dropped(self):
+        # x.* holds everything that starts with x, and xa*c holds xc
+        self.assertIs(pyre.parse("x.*.+|x.*"), pyre.parse("x.*"))
+        self.assertIs(pyre.parse("xy|x.*"), pyre.parse("x.*"))
+        self.assertIs(pyre.parse("x|x.*"), pyre.parse("x.*"))
+        self.assertIs(pyre.parse("xc|xa*c"), pyre.parse("xa*c"))
+        self.assertEqual(str(pyre.parse("x.*b|x.*c")), "x·.*·b | x·.*·c")
+
+    def test_alternatives_covering_each_other_keep_one(self):
+        # x.* and xa*.* are the same language, and either order keeps x.*
+        self.assertIs(pyre.parse("xa*.*|x.*"), pyre.parse("x.*"))
+        self.assertIs(pyre.parse("x.*|xa*.*"), pyre.parse("x.*"))
+
     def test_capturing_alternatives_are_kept(self):
         # The first alternative wins, so b reports as group 1, as in re
         self.assertEqual(pyre.fullmatch("(a*b)|(b)", "b"),
