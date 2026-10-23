@@ -779,21 +779,21 @@ class RegexXor(Regex):
             key = (cls, frozenset((left, right)), frozenset(kwargs.items()))
 
         def init(self):
-            self.left = left
-            self.right = right
             self.args = (left, right)
-            self.charset = self.left.charset & self.right.charset
+            self.charset = left.charset & right.charset
 
         return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
-            self._nullable = RegexXor(self.left.nullable(), self.right.nullable())
+            left, right = self.args
+            self._nullable = RegexXor(left.nullable(), right.nullable())
 
         return self._nullable
 
     def _derive(self, ch):
-        return RegexXor(self.left.derive(ch), self.right.derive(ch))
+        left, right = self.args
+        return RegexXor(left.derive(ch), right.derive(ch))
 
     def __str__(self):
         return self.join(f' {RegexXor.sym} ')
@@ -1282,21 +1282,21 @@ class RegexDiff(Regex):
         key = (cls, left, right, frozenset(kwargs.items()))
 
         def init(self):
-            self.left = left
-            self.right = right
             self.args = (left, right)
-            self.charset = self.left.charset & self.right.charset
+            self.charset = left.charset & right.charset
 
         return cls._intern(key, init)
 
     def nullable(self):
         if self._nullable is None:
-            self._nullable = RegexDiff(self.left.nullable(), self.right.nullable())
+            left, right = self.args
+            self._nullable = RegexDiff(left.nullable(), right.nullable())
 
         return self._nullable
 
     def _derive(self, ch):
-        return RegexDiff(self.left.derive(ch), self.right.derive(ch))
+        left, right = self.args
+        return RegexDiff(left.derive(ch), right.derive(ch))
 
     def __str__(self):
         return self.join(f' {RegexDiff.sym} ')

@@ -122,19 +122,21 @@ def _nullable_markers(e):
         return nullable_markers(e.expr)
 
     if isinstance(e, rx.RegexDiff):
-        if e.right.isnullable():
+        left, right = e.args
+        if right.isnullable():
             return None
-        return nullable_markers(e.left)
+        return nullable_markers(left)
 
     if isinstance(e, rx.RegexNot):
         return None if e.expr.isnullable() else ()
 
     if isinstance(e, rx.RegexXor):
-        left_ok = e.left.isnullable()
-        right_ok = e.right.isnullable()
+        left, right = e.args
+        left_ok = left.isnullable()
+        right_ok = right.isnullable()
         if left_ok == right_ok:
             return None
-        return nullable_markers(e.left) if left_ok else nullable_markers(e.right)
+        return nullable_markers(left) if left_ok else nullable_markers(right)
 
     # Empty, Sym, Dot
     #
@@ -216,15 +218,17 @@ def _derive_branches(e, ch):
         return out
 
     if isinstance(e, rx.RegexDiff):
-        negated = e.right.derive(ch)
-        return [(m, rx.RegexDiff(t, negated)) for m, t in derive_branches(e.left, ch)]
+        left, right = e.args
+        negated = right.derive(ch)
+        return [(m, rx.RegexDiff(t, negated)) for m, t in derive_branches(left, ch)]
 
     if isinstance(e, rx.RegexNot):
         return [((), e.derive(ch))]
 
     if isinstance(e, rx.RegexXor):
-        return (derive_branches(rx.RegexDiff(e.left, e.right), ch) +
-                derive_branches(rx.RegexDiff(e.right, e.left), ch))
+        left, right = e.args
+        return (derive_branches(rx.RegexDiff(left, right), ch) +
+                derive_branches(rx.RegexDiff(right, left), ch))
 
     raise TypeError(f'derive_branches: unsupported node {type(e).__name__}')
 
