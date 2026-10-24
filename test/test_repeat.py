@@ -186,20 +186,8 @@ class TestCountedRepeat(RegexTestCase):
 
 class TestNestedRepeat(RegexTestCase):
     """
-    Nested repeats simplify to the star they amount to, so their DFAs are
-    no bigger than the star's
+    Repeats nested inside repeats
     """
-
-    def test_simplified_forms(self):
-        for pattern, simple in [
-            ('(?:a*)+', 'a*'), ('(?:a?)+', 'a*'),
-            ('(?:a*)?', 'a*'), ('(?:a+)?', 'a*'), ('(?:a?)?', 'a?'),
-            ('(?:a+)*', 'a*'), ('(?:a?)*', 'a*'),
-            ('(?:a*|b)*', '(?:a|b)*'), ('(?:a*b*)*', '(?:a|b)*'),
-            ('(?:a?b?c?)*', '(?:a|b|c)*'), ('(?:ε|a)*', 'a*'), ('.+*', '.*'),
-        ]:
-            with self.subTest(pattern=pattern):
-                self.assertIs(pyre.parse(pattern), pyre.parse(simple))
 
     def test_not_nullable_concatenation_stays(self):
         self.assertTrue(pyre.fullmatch('(?:a*b)*', 'aab'))
@@ -210,11 +198,6 @@ class TestNestedRepeat(RegexTestCase):
             for s in ['', 'a', 'b', 'ab', 'ba', 'aabba', 'c', 'abc']:
                 with self.subTest(pattern=pattern, s=s):
                     self.assert_fullmatch_same_as_re(pattern, s)
-
-    def test_captures_are_left_alone(self):
-        # Which iteration reports a group depends on the repeats as written
-        self.assertIsInstance(pyre.parse('(a*)+'), rx.RegexPlus)
-        self.assertIsInstance(pyre.parse('(?:(a)*b*)*').expr, rx.RegexConcat)
 
 
 if __name__ == "__main__":

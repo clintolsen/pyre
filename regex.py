@@ -976,15 +976,6 @@ class RegexStar(Regex):
         if expr.isstar or expr.isepsilon:
             return expr
 
-        # Only what r can repeat matters to r*, so (r+)*, (r?)*, (r*|s)* and
-        # (r*·s*)* repeat r and s. Not with captures, which report a group
-        # from the iteration that matched it.
-        #
-        if not expr.hascaptures:
-            expr = RegexStar._repeated(expr)
-            if expr.isepsilon:
-                return expr
-
         # 3) ∅∗ ≈ ε
         #
         if expr.isempty:
@@ -1000,23 +991,6 @@ class RegexStar(Regex):
             self.isany = self.expr.isdot
 
         return cls._intern(key, init)
-
-    @staticmethod
-    def _repeated(expr):
-        '''
-        An expression with the same star as expr: (r+)* ≈ (r?)* ≈ r*, and
-        alternatives, or the operands of a concatenation that are all
-        nullable, each repeat on their own. ε adds nothing to a star.
-        '''
-        if expr.isstar or expr.isplus or expr.isopt:
-            return RegexStar._repeated(expr.expr)
-
-        if isinstance(expr, RegexOr) or (isinstance(expr, RegexConcat) and expr.isnullable()):
-            args = [RegexStar._repeated(arg) for arg in expr.args]
-            args = [arg for arg in args if not arg.isepsilon]
-            return functools.reduce(RegexOr, args) if args else RegexEpsilon()
-
-        return expr
 
     def nullable(self):
         return RegexEpsilon()
@@ -1042,11 +1016,6 @@ class RegexPlus(Regex):
         #
         if expr.isplus:
             return expr
-
-        # 2) r+ ≈ r* when r is nullable, as in (r*)+ and (r?)+
-        #
-        if not expr.hascaptures and expr.isnullable():
-            return RegexStar(expr)
 
         key = (cls, expr, frozenset(kwargs.items()))
 
@@ -1078,17 +1047,6 @@ class RegexOpt(Regex):
     sym = '?'
 
     def __new__(cls, expr, **kwargs):
-        if not expr.hascaptures:
-            # 1) r? ≈ r when r is nullable, as in (r*)? and (r?)?
-            #
-            if expr.isnullable():
-                return expr
-
-            # 2) (r+)? ≈ r*
-            #
-            if expr.isplus:
-                return RegexStar(expr.expr)
-
         key = (cls, expr, frozenset(kwargs.items()))
 
         def init(self):
