@@ -174,9 +174,14 @@ class TestCountedRepeat(RegexTestCase):
 
     def test_groups_take_the_last_iteration_like_re(self):
         # A body that can match empty still takes an iteration, as re's
-        # greedy repeat does
+        # greedy repeat does, and one more at the end if the repeat could
+        # go on
         for pattern, text in [('(a?){0,2}c?', ''), ('(a?){0,3}c?', 'aa'),
-                              ('(a*){0,2}c?', 'a'), ('(ab|a)(b?){0,2}c?', 'ac')]:
+                              ('(a*){0,2}c?', 'a'), ('(ab|a)(b?){0,2}c?', 'ac'),
+                              ('(a?){0,3}', 'aaa'), ('(a*)*', ''), ('(a*)*', 'aa'),
+                              ('(a*)+c?', 'aaa'), ('(a?)*b', 'aab'),
+                              ('(a?){1,}c?', 'aaaac'), ('(a?){2,}', 'a'),
+                              ('(?:(a)|b?)*', 'ab')]:
             with self.subTest(pattern=pattern, text=text):
                 m = re.fullmatch(pattern, text)
                 want = {g: m.span(g) for g in range(m.re.groups + 1)}

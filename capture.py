@@ -90,7 +90,7 @@ def _nullable_markers(e):
     if e.ismarker:
         return (e,)
 
-    if e.isepsilon or isinstance(e, (rx.RegexStar,)):
+    if e.isepsilon:
         return ()
 
     if isinstance(e, rx.RegexOr):
@@ -112,7 +112,11 @@ def _nullable_markers(e):
     if isinstance(e, rx.RegexPlus):
         return nullable_markers(e.expr)
 
-    if isinstance(e, rx.RegexOpt) or (isinstance(e, rx.RegexRepeat) and e.lo == 0):
+    # A repeat that could go on takes one more, empty, iteration if its body
+    # can match empty, as re does, so (a*)* reports group 1 at the end of
+    # "aa" as (2, 2)
+    #
+    if isinstance(e, (rx.RegexStar, rx.RegexOpt)) or (isinstance(e, rx.RegexRepeat) and e.lo == 0):
         inner = nullable_markers(e.expr)
         return inner if inner is not None else ()
 
