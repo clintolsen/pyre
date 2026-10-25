@@ -227,11 +227,17 @@ class Regex:
     #
     ASSOCIATIVE = {'RegexOr', 'RegexAnd', 'RegexXor', 'RegexConcat'}
 
+    # Repeats, which print after their operand
+    #
+    POSTFIX = {'RegexStar', 'RegexPlus', 'RegexOpt', 'RegexRepeat'}
+
     def paren(self, child, right=False):
         '''
         Emit parens if the child binds more loosely than the parent. Binary
         operators group left to right, so a right operand at the same level
-        needs them too, unless it is the same associative operator.
+        needs them too, unless it is the same associative operator. A repeat
+        of a repeat needs them as well, since a*? would read as one lazy
+        repeat.
         '''
         self_class = self.__class__.__name__
         child_class = child.__class__.__name__
@@ -248,8 +254,11 @@ class Regex:
         except KeyError:
             return text
 
-        if theirs < mine or (right and theirs == mine and not (
-                child_class == self_class and self_class in Regex.ASSOCIATIVE)):
+        if theirs < mine or (theirs == mine and self_class in Regex.POSTFIX):
+            return f'({text})'
+
+        if right and theirs == mine and not (
+                child_class == self_class and self_class in Regex.ASSOCIATIVE):
             return f'({text})'
 
         return text
@@ -550,7 +559,7 @@ def utf8_sequences(lo, hi):
 # Characters printed with a backslash: outside a class, those the parser
 # reads as syntax; inside one, those it reads as class syntax
 #
-_SPECIAL = frozenset('\\.[](){}|^-&*+?~#ε')
+_SPECIAL = frozenset('\\.[](){}|^-&*+?~#ε$')
 _CLASS_SPECIAL = frozenset('\\]-^')
 
 _NAMED_ESCAPES = {'\t': 't', '\n': 'n', '\r': 'r', '\v': 'v', '\f': 'f', '\a': 'a', ' ': ' '}

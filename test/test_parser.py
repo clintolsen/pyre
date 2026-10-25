@@ -68,11 +68,16 @@ class TestPrinting(unittest.TestCase):
             with self.subTest(pattern=pattern):
                 self.assertEqual(str(pyre.parse(pattern)), printed)
 
+    def test_repeat_of_a_repeat_is_grouped(self):
+        self.assertEqual(str(pyre.parse('(?:a*)?')), '(a*)?')
+        self.assertEqual(str(pyre.parse('(?:a{2})+')), '(a{2})+')
+
     def test_printed_form_reparses_to_the_same_language(self):
         # | and & may print their operands in either order, so compare
         # languages rather than text
         for pattern in ['(?:a|b)c', 'a(?:b|c)', 'a-(?:b|c)', '(?:a|b)&c',
-                        'a&(?:b|c)', 'a^(?:b-c)', '~(?:a|b)c', '(?:a-b)|c']:
+                        'a&(?:b|c)', 'a^(?:b-c)', '~(?:a|b)c', '(?:a-b)|c',
+                        '(?:a*)?', r'a\$']:
             with self.subTest(pattern=pattern):
                 printed = str(pyre.parse(pattern)).replace('·', '')
                 self.assertTrue(pyre.equal(printed, pattern), printed)
@@ -131,6 +136,31 @@ class TestErrors(unittest.TestCase):
         self.assert_error('a{3,1}', 1)
         self.assert_error('a{2', 1)
         self.assert_error('a{3(}', 1)
+
+    def test_repeat_of_a_repeat(self):
+        # re reads these as lazy or possessive repeats
+        for pattern in ['a*?', 'a+?', 'a??', 'a{2}?', 'a**', 'a*+', 'a{2}*']:
+            with self.subTest(pattern=pattern):
+                self.assert_error(pattern, len(pattern) - 1)
+        self.assert_error('~a* ?', 4)
+        self.assertIs(pyre.parse('(?:a*)?'), rx.RegexOpt(rx.RegexStar(a)))
+
+    def test_anchors(self):
+        self.assert_error('a$', 1)
+        self.assert_error('a|$', 2)
+        self.assert_error(r'\Aa', 0)
+        self.assert_error(r'a\Z', 1)
+        self.assert_error(r'\bfoo', 0)
+        self.assert_error(r'a\B', 1)
+        self.assertTrue(pyre.fullmatch(r'a\$', 'a$'))
+        self.assertTrue(pyre.fullmatch('[$]', '$'))
+        self.assertTrue(pyre.fullmatch(r'[\b]', '\b'))
+
+    def test_escapes_re_reads_differently(self):
+        self.assert_error(r'(a)\1', 3)
+        self.assert_error(r'[\1]', 1)
+        self.assert_error(r'\q', 0)
+        self.assert_error(r'[\z]', 1)
 
     def test_classes(self):
         self.assert_error('[ab', 0)

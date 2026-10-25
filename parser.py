@@ -91,10 +91,12 @@ _SETS = {
 _HEX_ESCAPES = {'x': 2, 'u': 4, 'U': 8}
 _HEX_DIGITS = frozenset('0123456789abcdefABCDEF')
 
-_NAME_START = frozenset('abcdefghijklmnopqrstuvwxyz'
-                        'ABCDEFGHIJKLMNOPQRSTUVWXYZ_')
+_LETTERS = frozenset('abcdefghijklmnopqrstuvwxyz'
+                     'ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+_NAME_START = _LETTERS | frozenset('_')
 _NAME_CHARS = _NAME_START | frozenset('0123456789')
 _DIGITS = frozenset('0123456789')
+_OCTAL_DIGITS = frozenset('01234567')
 
 
 class PatternError(ValueError):
@@ -154,6 +156,15 @@ class _Parser:
                     break
                 lhs = self._postfix(lhs)
 
+                # In re a second repeat makes the first lazy or possessive,
+                # so (?:a*)? has to be written out
+                #
+                ch = self._peek()
+                if ch == '?':
+                    self._error('lazy repeats are not supported; use greedy=False')
+                if ch in _POSTFIX_OPS:
+                    self._error('multiple repeat')
+
             elif ch in _INFIX:
                 lbp, rbp, op = _INFIX[ch]
                 if lbp < min_bp:
@@ -210,6 +221,11 @@ class _Parser:
 
         if ch == 'ε':
             return regex.RegexEpsilon()
+
+        # $ is an anchor in re, so it is reserved rather than a literal
+        #
+        if ch == '$':
+            self._error('anchors are not supported; use \\$ to match $', start)
 
         if ch == '\\':
             esc = self._escape(start)
@@ -376,7 +392,7 @@ class _Parser:
         if ch != '\\':
             return ch
 
-        esc = self._escape(self.pos - 1)
+        esc = self._escape(self.pos - 1, in_class=True)
 
         if isinstance(esc, tuple):
             ranges, negate = esc
@@ -384,11 +400,12 @@ class _Parser:
 
         return esc
 
-    def _escape(self, start):
+    def _escape(self, start, in_class=False):
         """
         After '\\'. Returns the character the escape stands for, or
-        (ranges, negate) for \\d \\w \\s and their negations. Any other
-        character is taken as is.
+        (ranges, negate) for \\d \\w \\s and their negations. Escapes that
+        re reads differently are errors, as is any other ASCII letter, as
+        in re. Any other character is taken as is.
         """
         text = self.text
         if self.pos >= len(text):
@@ -417,7 +434,29 @@ class _Parser:
         if ch == 'N':
             return self._named_char(start)
 
-        return _CONTROL_ESCAPES.get(ch, ch)
+        # \0 and up to two more octal digits name a character, as in re
+        #
+        if ch == '0':
+            end = self.pos
+            while end < len(text) and end - self.pos < 2 and text[end] in _OCTAL_DIGITS:
+                end += 1
+            code = int(text[self.pos - 1:end], 8)
+            self.pos = end
+            return chr(code)
+
+        if ch in _DIGITS:
+            self._error('backreferences are not supported', start)
+
+        if ch == 'b' and not in_class:
+            self._error('word boundaries are not supported', start)
+
+        if ch in _CONTROL_ESCAPES:
+            return _CONTROL_ESCAPES[ch]
+
+        if ch in _LETTERS:
+            self._error(f'bad escape \\{ch}', start)
+
+        return ch
 
     def _named_char(self, start):
         """ After '\\N'. Reads {name} and returns the character it names. """

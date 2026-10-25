@@ -328,12 +328,12 @@ union   = inter { ( "|" | "^" | "-" ) inter } ;
 inter   = concat { "&" concat } ;
 concat  = unary { unary } ;          (* only the first may be a bare "-" *)
 unary   = "~" unary | postfix ;
-postfix = atom { "*" | "+" | "?" | "{" count "}" } ;
+postfix = atom [ "*" | "+" | "?" | "{" count "}" ] ;
 count   = int | int "," [ int ] | "," int ;
 
 atom    = "(" [ "?:" | "?P<" name ">" | "?<" name ">" ] union ")"
         | class | "." | "ε" | escape | char ;
-char    = any character except | ^ & ~ ( ) [ . * + ? { \ ε # and whitespace ;
+char    = any character except | ^ & ~ ( ) [ . * + ? { $ \ ε # and whitespace ;
 
 class   = "[" [ "^" ] [ "]" ] { item } "]" ;
 item    = cchar [ "-" cchar ] ;
@@ -341,30 +341,38 @@ cchar   = escape | any character except "]" and "\" ;
 
 escape  = "\" ( set
               | "x" 2 * hex | "u" 4 * hex | "U" 8 * hex | "N{" charname "}"
+              | "0" [ oct [ oct ] ]
               | "a" | "b" | "t" | "n" | "v" | "f" | "r"  (* control characters *)
-              | any other character ) ;                   (* stands for itself *)
+              | any character but an ASCII letter or digit ) ;  (* itself *)
 set     = "d" | "D" | "w" | "W" | "s" | "S" ;
 name    = ( letter | "_" ) { letter | digit | "_" } ;
 int     = digit { digit } ;
 ```
 
 In a class, `-` is a literal first or last and must form a range anywhere
-else, and a set such as `\d` can't end a range. Beyond the grammar, a pattern and a group can't be empty, `{m,n}` needs
+else, and a set such as `\d` can't end a range. `\b` is a backspace only in a
+class. Beyond the grammar, a pattern and a group can't be empty, `{m,n}` needs
 `m ≤ n`, ranges must ascend, and groups and `~` nest at most 100 deep.
 
 ### Differences from Python's `re`
 
-- `^` between operands is symmetric difference, and `-` is difference. There
-  are no anchors or word boundaries: `$` is a literal, `\A`, `\Z` and `\B` are
-  the letters, and `\b` is a backspace everywhere, not only in a class.
+- `^` between operands is symmetric difference, and `-` is difference.
 - `&`, `~` and `ε` have meanings of their own; escape them to match them.
-- `*?`, `+?` and `??` are two repeats, not lazy ones, so `a*?` is `(a*)?`. For
-  the shortest match, pass `greedy=False` to `search()`, or `--no-greedy` on
-  the command line. Likewise `*+` is not possessive.
 - Patterns are always verbose, so whitespace and `#` need escaping.
-- `{` always starts a repeat, so `a{` is an error where `re` reads it as text.
-- Groups are `(...)`, `(?:...)`, `(?P<name>...)` and `(?<name>...)`.
-  Lookarounds, backreferences and inline flags such as `(?i)` aren't supported.
+
+Where `re` gives syntax a meaning pyre doesn't support, pyre rejects it rather
+than reading it another way:
+
+- Anchors and word boundaries: `$`, `\A`, `\Z`, `\b` and `\B`. Write `\$` for
+  a literal `$`. Any other escaped ASCII letter is an error too, as in `re`.
+- Backreferences: `\1` to `\9`.
+- Lazy and possessive repeats: `*?`, `+?`, `??`, `*+` and the like. A repeat
+  can't directly follow another, so write `(?:a*)?` if you mean it. For the
+  shortest match, pass `greedy=False` to `search()`, or `--no-greedy` on the
+  command line.
+- Lookarounds and inline flags such as `(?i)`. Groups are `(...)`, `(?:...)`,
+  `(?P<name>...)` and `(?<name>...)`.
+- `a{`, which `re` reads as text. `{` always starts a repeat.
 
 ---
 

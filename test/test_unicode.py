@@ -84,6 +84,14 @@ class TestEscapes(unittest.TestCase):
         self.assertTrue(pyre.fullmatch(r'\x411', 'A1'))
         self.assertTrue(pyre.fullmatch(r'\u00e9e', 'ée'))
 
+    def test_octal_escapes(self):
+        # \0 and up to two more octal digits, as in re
+        for pattern, text in [(r'\0', '\0'), (r'\012', '\n'), (r'\0123', '\n3'),
+                              (r'\08', '\0' '8'), (r'[\0-\07]', '\7')]:
+            with self.subTest(pattern=pattern):
+                self.assertTrue(pyre.fullmatch(pattern, text))
+                self.assertTrue(re.fullmatch(pattern, text))
+
     def test_named_characters(self):
         self.assertTrue(pyre.fullmatch(r'\N{EM DASH}+', '——'))
         self.assertTrue(pyre.fullmatch(r'\N{em dash}', '—'))
