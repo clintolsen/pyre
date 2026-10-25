@@ -311,9 +311,60 @@ From loosest to tightest binding:
 | `~` | complement | `~ab` is `(~a)b` |
 | `*` `+` `?` `{m,n}` | repetition | `~a*` is `~(a*)` |
 
-Binary operators group left to right. `^` is symmetric difference, not a
-start anchor. `-` is a literal wherever an operand begins, so `-a` matches
-"-a" and `a|-b` matches "a" or "-b". When in doubt, group with `(?:...)`.
+Binary operators group left to right. `-` is a literal wherever an operand
+begins, so `-a` matches "-a" and `a|-b` matches "a" or "-b". When in doubt,
+group with `(?:...)`.
+
+### Grammar
+
+The parser accepts this grammar. Outside a character class, whitespace and `#`
+comments may appear between any two tokens (see
+[Pyre Uses Verbose Patterns](#pyre-uses-verbose-patterns)); inside one, every
+character counts.
+
+```ebnf
+pattern = union ;
+union   = inter { ( "|" | "^" | "-" ) inter } ;
+inter   = concat { "&" concat } ;
+concat  = unary { unary } ;          (* only the first may be a bare "-" *)
+unary   = "~" unary | postfix ;
+postfix = atom { "*" | "+" | "?" | "{" count "}" } ;
+count   = int | int "," [ int ] | "," int ;
+
+atom    = "(" [ "?:" | "?P<" name ">" | "?<" name ">" ] union ")"
+        | class | "." | "ε" | escape | char ;
+char    = any character except | ^ & ~ ( ) [ . * + ? { \ ε # and whitespace ;
+
+class   = "[" [ "^" ] [ "]" ] { item } "]" ;
+item    = cchar [ "-" cchar ] ;
+cchar   = escape | any character except "]" and "\" ;
+
+escape  = "\" ( set
+              | "x" 2 * hex | "u" 4 * hex | "U" 8 * hex | "N{" charname "}"
+              | "a" | "b" | "t" | "n" | "v" | "f" | "r"  (* control characters *)
+              | any other character ) ;                   (* stands for itself *)
+set     = "d" | "D" | "w" | "W" | "s" | "S" ;
+name    = ( letter | "_" ) { letter | digit | "_" } ;
+int     = digit { digit } ;
+```
+
+In a class, `-` is a literal first or last and must form a range anywhere
+else, and a set such as `\d` can't end a range. Beyond the grammar, a pattern and a group can't be empty, `{m,n}` needs
+`m ≤ n`, ranges must ascend, and groups and `~` nest at most 100 deep.
+
+### Differences from Python's `re`
+
+- `^` between operands is symmetric difference, and `-` is difference. There
+  are no anchors or word boundaries: `$` is a literal, `\A`, `\Z` and `\B` are
+  the letters, and `\b` is a backspace everywhere, not only in a class.
+- `&`, `~` and `ε` have meanings of their own; escape them to match them.
+- `*?`, `+?` and `??` are two repeats, not lazy ones, so `a*?` is `(a*)?`. For
+  the shortest match, pass `greedy=False` to `search()`, or `--no-greedy` on
+  the command line. Likewise `*+` is not possessive.
+- Patterns are always verbose, so whitespace and `#` need escaping.
+- `{` always starts a repeat, so `a{` is an error where `re` reads it as text.
+- Groups are `(...)`, `(?:...)`, `(?P<name>...)` and `(?<name>...)`.
+  Lookarounds, backreferences and inline flags such as `(?i)` aren't supported.
 
 ---
 
