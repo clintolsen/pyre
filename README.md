@@ -198,7 +198,7 @@ The most interesting bit is here:
 
 ```python
 class Lexer:
-    # Rule order is law out here: first match wins when two patterns can hit the same spot.
+    # The longest match wins, and rule order breaks ties.
     _SPECS = [
         ('WS',        r"\s+"),
         ('NUMBER',    r"\d+\.\d*|\.\d+|\d+"),  # 123, 123.45, .45, 123.
