@@ -33,10 +33,11 @@ def _to_regex(pattern: Pattern) -> Regex:
     raise TypeError(f'expected str, Regex, or DFA, got {type(pattern).__name__}')
 
 
-# The most recently compiled patterns, as in Python's re, so calling
-# search() and the like in a loop doesn't rebuild the DFA each time. Nodes
-# and states are otherwise freed once nothing uses them, so this is what
-# keeps a recent pattern's DFA alive between calls.
+# The most recently used patterns, as in Python's re, so calling search()
+# and the like in a loop doesn't rebuild the DFA each time. Nodes and
+# states are otherwise freed once nothing uses them, so this is what keeps
+# a recent pattern's DFA alive between calls. A hit moves the pattern to
+# the end, so the one dropped is the least recently used.
 #
 _MAXCACHE = 512
 _cache: Dict[Union[str, Regex], DFA] = {}
@@ -48,13 +49,11 @@ def compile(pattern: Pattern) -> DFA:
     """
     if isinstance(pattern, DFA):
         return pattern
-    try:
-        return _cache[pattern]
-    except KeyError:
-        pass
-    dfa = _compile_dfa(_to_regex(pattern))
-    if len(_cache) >= _MAXCACHE:
-        del _cache[next(iter(_cache))]
+    dfa = _cache.pop(pattern, None)
+    if dfa is None:
+        dfa = _compile_dfa(_to_regex(pattern))
+        if len(_cache) >= _MAXCACHE:
+            del _cache[next(iter(_cache))]
     _cache[pattern] = dfa
     return dfa
 

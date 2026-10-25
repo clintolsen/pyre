@@ -44,6 +44,12 @@ class TestPatternCache(unittest.TestCase):
             pyre.compile('bound%d' % i)
         self.assertEqual(len(pyre._cache), pyre._MAXCACHE)
 
+    def test_a_pattern_in_use_stays(self):
+        hot = pyre.compile('hot[0-9]+')
+        for i in range(pyre._MAXCACHE + 10):
+            pyre.compile('cold%d' % i)
+            self.assertIs(pyre.compile('hot[0-9]+'), hot)
+
 
 if __name__ == '__main__':
     unittest.main()
