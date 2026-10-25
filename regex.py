@@ -86,6 +86,11 @@ class Regex:
             self.isany = False
             self.isnot = False
 
+            # Set on | and & built with ordered=True, which keep their
+            # operands as written
+            #
+            self.isordered = False
+
             init(self)
 
             # True if a capture marker appears anywhere below this node.
@@ -93,6 +98,14 @@ class Regex:
             # must not reorder or drop such terms.
             #
             self.hascaptures = self.ismarker or any(arg.hascaptures for arg in self.args)
+
+            # True if order matters anywhere below this node: it has
+            # captures, or operands kept in order for a pattern's groups.
+            # The same simplifications skip these terms, and the DFA builds
+            # from a copy without them.
+            #
+            self.hasorder = (self.hascaptures or self.isordered
+                             or any(arg.hasorder for arg in self.args))
 
             Regex._instance[key] = self
             return self
@@ -127,8 +140,9 @@ class Regex:
     def __eq__(self, other):
         return self is other
 
-    # Return a copy with every capture marker replaced by ε. Markers are
-    # zero-width, so the language is unchanged.
+    # Return a copy with every capture marker replaced by ε, and operands
+    # kept in order rebuilt without it. Markers are zero-width and order
+    # only sets priority, so the language is unchanged.
     #
     # Set operators keep markers, so composed patterns report the groups of
     # whichever operand matched. pyre.equal() and pyre.subset() strip them
@@ -137,7 +151,7 @@ class Regex:
     # separately parsed copies of one pattern.
     #
     def _without_captures(self):
-        if not self.hascaptures:
+        if not self.hasorder:
             return self
         if self.ismarker:
             return RegexEpsilon()
@@ -725,13 +739,22 @@ class RegexOr(Regex):
     def __new__(cls, left, right, **kwargs):
         ''' Create an OR '''
 
+        # Alternatives with capture groups are ordered: the left one numbers
+        # its groups first and wins when both match. So are all of them in a
+        # pattern with groups, which the parser builds with ordered=True,
+        # since the one that wins sets where later groups start. Everything
+        # else stays commutative so DFA states still treat r + s and s + r
+        # as one.
+        #
+        ordered = kwargs.get('ordered', False) or left.hascaptures or right.hascaptures
+
         # 4) ¬∅ + r ≈ ¬∅
         #    r + ¬∅ ≈ ¬∅
         #
-        # A capturing r on the left still has priority over ¬∅ on the
-        # right, so (a)|.* must keep reporting group 1 for "a".
+        # An ordered r on the left still has priority over ¬∅ on the right,
+        # so (a)|.* must keep reporting group 1 for "a".
         #
-        if left.isany or (right.isany and not left.hascaptures):
+        if left.isany or (right.isany and not ordered):
             return RegexStar(RegexDot())
 
         # 5) ∅ + r ≈ r
@@ -751,12 +774,6 @@ class RegexOr(Regex):
         args_r = Regex.get_args(right, RegexOr)
         args_u = Regex.unique(args_l + args_r)
 
-        # Alternatives with capture groups are ordered: the left one numbers
-        # its groups first and wins when both match. Everything else stays
-        # commutative so DFA states still treat r + s and s + r as one.
-        #
-        ordered = left.hascaptures or right.hascaptures
-
         if set(args_r) <= set(args_l):
             return left
         if set(args_l) <= set(args_r):
@@ -767,9 +784,8 @@ class RegexOr(Regex):
         # then L(s) ⊆ L(p·s). ε + r ≈ r when r is nullable is the case where
         # s is empty. Both sides may also start with the same prefix u, and
         # u·t + u·p·.* ≈ u·p·.* for any t. This only shrinks DFAs; the
-        # paper's rules are what make them finite. Only without captures,
-        # where dropping an alternative cannot change which one reports
-        # groups.
+        # paper's rules are what make them finite. Only when unordered,
+        # where dropping an alternative cannot change which one wins.
         #
         # Each side was already reduced when it was built, so only pairs
         # with one alternative from each side need checking. Checking every
@@ -784,7 +800,7 @@ class RegexOr(Regex):
             if dropped:
                 return functools.reduce(RegexOr, [y for y in args_u if y not in dropped])
 
-        # 2) r + s ≈ s + r, unless captures make order matter
+        # 2) r + s ≈ s + r, unless order matters
         #
         args = tuple(args_u)
         if ordered:
@@ -796,6 +812,7 @@ class RegexOr(Regex):
             self.args = args
             self.charset = left.charset & right.charset
             self.may_subsume = Regex._may_subsume(left) or Regex._may_subsume(right)
+            self.isordered = kwargs.get('ordered', False)
 
         return cls._intern(key, init)
 
@@ -923,9 +940,11 @@ class RegexAnd(Regex):
         args_u = Regex.unique(args_l + args_r)
 
         # Both sides report captures, so order only sets group numbering,
-        # but that still has to follow the operands as written.
+        # but that still has to follow the operands as written. In a pattern
+        # with groups the left side's alternatives also come first, which
+        # the parser asks for with ordered=True.
         #
-        ordered = left.hascaptures or right.hascaptures
+        ordered = kwargs.get('ordered', False) or left.hascaptures or right.hascaptures
 
         if set(args_r) <= set(args_l):
             return left
@@ -942,6 +961,7 @@ class RegexAnd(Regex):
         def init(self):
             self.args = args
             self.charset = left.charset & right.charset
+            self.isordered = kwargs.get('ordered', False)
 
         return cls._intern(key, init)
 
@@ -1101,10 +1121,10 @@ class RegexRepeat(Regex):
         # r^n and r{m,} is r*. r^n is a flat concatenation, one level deep,
         # and its derivatives keep the shared r·r·… factored, so partial
         # matches with different counts still merge into one state; as a
-        # counted repeat they would not. Not with captures, which report a
-        # group from the occurrence that matched it.
+        # counted repeat they would not. Not where order matters, as with
+        # captures, which report a group from the occurrence that matched it.
         #
-        if not expr.hascaptures and expr.isnullable():
+        if not expr.hasorder and expr.isnullable():
             if hi is None:
                 return RegexStar(expr)
             return RegexRepeat._power(expr, hi)
@@ -1155,7 +1175,7 @@ class RegexRepeat(Regex):
         return RegexRepeat(self.expr, lo, hi)
 
     def _without_captures(self):
-        if not self.hascaptures:
+        if not self.hasorder:
             return self
         if self._stripped is None:
             self._stripped = RegexRepeat(self.expr._without_captures(), self.lo, self.hi)

@@ -154,6 +154,30 @@ class TestCaptureGroups(RegexTestCase):
         self.assertEqual(pyre.fullmatch("(a.)|(.b)", "cb"),
                          {0: [(0, 2)], 2: [(0, 2)]})
 
+    def test_alternation_order_without_groups_in_it(self):
+        """The first alternative that matches wins, as written, even when
+        the alternation has no groups of its own, and whatever else is
+        alive with the same alternatives in another order."""
+        import re
+
+        keep = pyre.parse("ab|a")
+        for pattern, text in [("(a|ab)(b?)", "ab"), ("(ab|a)(b?)", "ab"),
+                              ("(?:a|ab)(b?)", "ab"), ("(ab|.*)(c?)", "abc"),
+                              ("(a|ab){0,2}(b?)", "ab"), ("(?:a|ab)*(b?)", "ab")]:
+            with self.subTest(pattern=pattern, text=text):
+                m = re.fullmatch(pattern, text)
+                expected = {0: [m.span()]}
+                for gid in range(1, m.re.groups + 1):
+                    expected[gid] = [m.span(gid)]
+                self.assertEqual(pyre.fullmatch(pattern, text), expected)
+        self.assertIs(keep, pyre.parse("a|ab"))
+
+    def test_order_does_not_reach_the_dfa(self):
+        """Alternatives kept in order for groups still share DFA states."""
+        self.assertEqual(len(pyre.compile("(a|ab)(b?)").states),
+                         len(pyre.compile("(?:ab|a)b?").states))
+        self.assertIs(pyre.parse("(a|ab)")._without_captures(), pyre.parse("ab|a"))
+
     def test_alternation_with_search(self):
         """Each search match reports only its own branch's group."""
         result = pyre.search("(a)b|(a)c", "xxacxxab", all=True)

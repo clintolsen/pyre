@@ -119,15 +119,30 @@ class PatternError(ValueError):
 
 def parse(pattern):
     """ Parse a pattern string into a Regex. Raises PatternError. """
-    return _Parser(pattern).parse()
+    expr = _Parser(pattern).parse()
+
+    # In a pattern with groups, the alternative that wins sets where later
+    # groups start, so | and & keep their operands in order. Parsing again
+    # is simpler than knowing beforehand whether a group is coming, and
+    # patterns without groups keep the commutative nodes the DFA shares.
+    #
+    if expr.hascaptures:
+        expr = _Parser(pattern, ordered=True).parse()
+
+    return expr
 
 
 class _Parser:
-    def __init__(self, pattern):
+    def __init__(self, pattern, ordered=False):
         self.text = pattern
         self.pos = 0
         self.depth = 0
         self.source = event.Source()
+
+        # Keyword arguments for | and &, which keep their operands in
+        # order when the pattern has groups
+        #
+        self.order = {'ordered': True} if ordered else {}
 
     def parse(self):
         if self._peek() is None:
@@ -170,7 +185,11 @@ class _Parser:
                 if lbp < min_bp:
                     break
                 self._advance()
-                lhs = op(lhs, self._expr(rbp))
+                rhs = self._expr(rbp)
+                if op is regex.RegexOr or op is regex.RegexAnd:
+                    lhs = op(lhs, rhs, **self.order)
+                else:
+                    lhs = op(lhs, rhs)
 
             elif ch is not None and ch not in _NOT_OPERAND:
                 lbp, rbp = _CONCAT
