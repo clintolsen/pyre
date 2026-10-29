@@ -127,6 +127,17 @@ difference   = pyre.compile(a - b)
 complement   = pyre.compile(~a)
 ```
 
+`match()` and `search()` take the longest match, where `re` takes the first
+alternative that matches, so `search("a|ab", "ab")` matches all of `ab`. Groups
+come from the first alternative that gives that match.
+
+A pattern that can match the empty string reports empty matches, as in `re`:
+`match("a*", "b")` matches the empty string at 0. With `all=True`, each search
+starts where the last match ended, and after an empty match the next one can't
+be empty at the same place, so `search("a*", "baa", all=True)` finds `(0, 0)`,
+`(1, 3)` and `(3, 3)`. Empty matches fall only between characters, never inside
+one's UTF-8 bytes. `lex()` never makes an empty token.
+
 ---
 
 ## Pyre Uses Verbose Patterns
@@ -362,6 +373,8 @@ class. Beyond the grammar, a pattern and a group can't be empty, `{m,n}` needs
 - `^` between operands is symmetric difference, and `-` is difference.
 - `&`, `~` and `ε` have meanings of their own; escape them to match them.
 - Patterns are always verbose, so whitespace and `#` need escaping.
+- The longest match wins, not the first alternative that matches: `a|ab`
+  matches all of `ab`.
 
 Where `re` gives syntax a meaning pyre doesn't support, pyre rejects it rather
 than reading it another way:

@@ -49,6 +49,11 @@ class TestFile(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, b'caf' + ON + b'\xc3\xa9' + OFF + b' \xff\xfe\n')
 
+    def test_empty_matches_highlight_nothing(self):
+        result = self.search('b*', b'abc\n')
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b'a' + ON + b'b' + OFF + b'c\n')
+
     def test_dot_skips_invalid_bytes(self):
         result = self.search('.', b'\xff\xfe\x80')
         self.assertEqual(result.returncode, 1)

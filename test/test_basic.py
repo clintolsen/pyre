@@ -11,6 +11,35 @@ if str(ROOT) not in sys.path:
 from test_common import RegexTestCase
 import pyre
 
+class TestEmptyMatches(RegexTestCase):
+    """
+    match() and search() report empty matches as Python's re does, and
+    finding all matches moves on after an empty one
+    """
+
+    def test_agree_with_re(self):
+        import re
+        for pattern, text in [('a*', ''), ('a*', 'b'), ('a*', 'baa'), ('x*', 'abxd'),
+                              ('(a*)b?', 'c'), (r'\d*', 'a1b22'), ('a?', 'ab')]:
+            with self.subTest(pattern=pattern, text=text):
+                self.assertEqual(pyre.search(pattern, text, all=True).get(0, []),
+                                 [m.span() for m in re.finditer(pattern, text)])
+                self.assertEqual(pyre.search(pattern, text)[0], [re.search(pattern, text).span()])
+                self.assertEqual(pyre.match(pattern, text)[0], [re.match(pattern, text).span()])
+
+    def test_groups_of_an_empty_match(self):
+        self.assertEqual(pyre.match('(a*)b?', 'c'), {0: [(0, 0)], 1: [(0, 0)]})
+
+    def test_shortest_match_can_be_empty(self):
+        self.assertEqual(pyre.search('a*', 'baa', greedy=False), {0: [(0, 0)]})
+        self.assertEqual(pyre.search('a+', 'baa', greedy=False), {0: [(1, 2)]})
+
+    def test_only_between_characters(self):
+        # Never inside a character's UTF-8 bytes
+        self.assertEqual(pyre.search('x*', 'éa→', all=True), {0: [(0, 0), (1, 1), (2, 2), (3, 3)]})
+        self.assertEqual(pyre.search('x*', 'é'.encode(), all=True), {0: [(0, 0), (2, 2)]})
+
+
 class TestLiterals(RegexTestCase):
     def test_single_literal(self):
         pat = "a"

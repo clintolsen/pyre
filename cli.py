@@ -52,7 +52,10 @@ def main(argv=None):
                 return 2
 
             LOG.debug(f'Groups: {groups}')
-            flatten = [interval for group in groups.values() for interval in group]
+            # Empty matches have nothing to highlight
+            #
+            flatten = [(begin, end) for group in groups.values()
+                       for begin, end in group if begin < end]
             intervals = regex.merge_ranges(flatten, closed=False)
             LOG.debug(f'Merged intervals: {intervals}')
 

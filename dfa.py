@@ -229,28 +229,34 @@ class DFA:
         return text.spans(groups)
 
 
-    def _run_from(self, text, offset, *, greedy=True):
+    def _run_from(self, text, offset, *, greedy=True, nonempty=False):
         """
         Run the DFA from offset to find the match end, then extract capture
         groups for that span.
         Returns (end_index, groups); (None, {}) if no match.
         """
-        end, rule = self._end(text, offset, greedy=greedy)
+        end, rule = self._end(text, offset, greedy=greedy, nonempty=nonempty)
 
         if end is None:
             return None, {}
 
         return end, self._groups(text, offset, end, rule)
 
-    def _end(self, text, offset, *, greedy=True):
+    def _end(self, text, offset, *, greedy=True, nonempty=False):
         """
         Run the DFA from offset until it reaches the dead state. The match
         ends at the last accepting state, or the first if not greedy, and
-        belongs to the rule that state accepts.
+        belongs to the rule that state accepts. An accepting initial state
+        is an empty match at offset, unless nonempty.
         Returns (end_index, rule); (None, None) if no match.
         """
         state = self.initial
         end = rule = None
+
+        if state.accept is not None and not nonempty:
+            end, rule = offset, state.accept
+            if not greedy:
+                return end, rule
 
         for index in range(offset, len(text)):
             state = state.goto[ord(text[index])]._next
@@ -284,6 +290,43 @@ class DFA:
             offset += 1
         return offset
 
+    # Skip to the next character boundary, past UTF-8 continuation bytes
+    #
+    @staticmethod
+    def _boundary(s, offset):
+        n = len(s)
+        while offset < n and '\x80' <= s[offset] < '\xc0':
+            offset += 1
+        return offset
+
+    def _find(self, data, offset, *, greedy=True, nonempty=False):
+        """
+        The leftmost match starting at offset or after, as
+        (start, end, groups), or None. If nonempty, a match starting at
+        offset itself can't be empty.
+
+        A pattern that matches empty matches at every character boundary,
+        the end of the text included, so only one that doesn't can skip
+        ahead to where a match can begin.
+        """
+        n = len(data)
+        empty = self.initial.accept is not None
+
+        while offset <= n:
+            if empty:
+                offset = self._boundary(data, offset)
+            else:
+                offset = self._skip(data, offset)
+                if offset >= n:
+                    break
+            end, groups = self._run_from(data, offset, greedy=greedy, nonempty=nonempty)
+            if groups:
+                return offset, end, groups
+            nonempty = False
+            offset += 1
+
+        return None
+
 
     def search(self, text, *, greedy=True, all=False):
         """
@@ -302,36 +345,26 @@ class DFA:
         """
         text = _Text(text)
         data = text.data
-        n = len(data)
-        offset = 0
 
-        # No match starts inside a character: every pattern matches whole
-        # characters, so the first transition on a continuation byte is
-        # dead and _skip steps over it.
-        #
         if not all:
-            while offset < n:
-                offset = self._skip(data, offset)
-                if offset >= n:
-                    break
-                end_index, groups = self._run_from(data, offset, greedy=greedy)
-                if groups:
-                    return text.spans(groups)
-                offset += 1
-            return {}
+            found = self._find(data, 0, greedy=greedy)
+            return text.spans(found[2]) if found else {}
 
+        # As in Python's re, each search starts where the last match ended,
+        # and after an empty match the next one can't be empty at the same
+        # place, so the search always moves on
+        #
         all_groups = {}
-        while offset < n:
-            offset = self._skip(data, offset)
-            if offset >= n:
+        offset = 0
+        nonempty = False
+        while True:
+            found = self._find(data, offset, greedy=greedy, nonempty=nonempty)
+            if found is None:
                 break
-            end_index, groups = self._run_from(data, offset, greedy=greedy)
-            if not groups:
-                offset += 1
-                continue
+            start, end, groups = found
             for gid, intervals in groups.items():
                 all_groups.setdefault(gid, []).extend(intervals)
-            offset = end_index
+            offset, nonempty = end, start == end
 
         return text.spans(all_groups)
 
@@ -351,7 +384,9 @@ class DFA:
         data = text.data
         index = 0
         while index < len(data):
-            end, rule = self._end(data, index)
+            # A token can't be empty, or lexing would make no progress
+            #
+            end, rule = self._end(data, index, nonempty=True)
 
             if end is None:
                 raise self._lex_error(text, index, 'no rule matches')

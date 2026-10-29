@@ -65,6 +65,8 @@ class TestLexer(unittest.TestCase):
         """A rule that matches the empty string never yields an empty token."""
         self.assertEqual(self.lex('ab1', [('ID', '[a-z]*'), ('NUM', '[0-9]*')]),
                          [('ID', 'ab'), ('NUM', '1')])
+        with self.assertRaises(pyre.LexError):
+            self.lex('a-', [('ID', '[a-z]*')])
 
     def test_groups_are_numbered_within_the_rule(self):
         """Each rule numbers its groups from 1, with spans into the text."""
