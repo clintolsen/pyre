@@ -13,10 +13,13 @@ expression into an NFA and then to a DFA, a derivative-based engine constructs
 the DFA directly from the expression by repeatedly applying derivative rules.
 This also allows novel set operations like language complement (NOT) `~`,
 intersection (AND) `&`, symmetric difference (XOR) `^`, and difference `-` in an
-efficient manner. Because matching is performed on the resulting DFA, the
-recognizer runs in linear time and does not require backtracking. Capture groups
-come from a second pass over the matched text that follows the pattern's partial
-derivatives in Pike VM style, so it never backtracks either.
+efficient manner. Because matching is performed on the resulting DFA, it never
+backtracks, and `fullmatch()` and `match()` read the text once, in linear time.
+`search()` retries from each start position, so it can take quadratic time when
+the DFA stays alive without matching, as `a*b` does on a long run of `a`, and
+so can finding all matches. Capture groups come from a second pass over the
+matched text that follows the pattern's partial derivatives in Pike VM style, so
+it never backtracks either.
 
 The project includes:
 
