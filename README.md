@@ -28,7 +28,7 @@ The project includes:
 - DFA construction using derivatives
 - Capture groups, including named groups
 - `match()`, `fullmatch()` and `search()` APIs, plus `lexer()` for flex-style tokenizing
-- Set operators on parsed patterns, and `equal()`, `subset()` and `isempty()` language checks
+- Set operators on parsed patterns, and `isequal()`, `issubset()`, `isdisjoint()` and `isempty()` language checks
 - Verbose patterns ala Python `re.X` with inline comments `#` allowed
 - Unicode patterns, matched against `str` or UTF-8 `bytes`
 - An example calculator app using lexer feature
@@ -164,7 +164,7 @@ Without complement, you'd have to use something like:
 
 `'/\* ( [^*] | \*+ [^*/] )* \*+ /'`
 
-`pyre.equal()` confirms the two patterns match exactly the same comments.
+`pyre.isequal()` confirms the two patterns match exactly the same comments.
 
 That has some serious `¯\_(ツ)_/¯` vibes.
 
@@ -285,7 +285,8 @@ the rules with a catch-all such as `('OTHER', '.')`, as `calc` does.
 
 ## Powerful Set Operators
 
-Test whether two REs recognize the same language, or whether one is a subset of another:
+Test whether two REs recognize the same language, whether one is a subset of
+another, or whether they share no strings:
 
 ```python
 import pyre
@@ -294,24 +295,25 @@ a  = pyre.parse("a(?:b|c)")
 b  = pyre.parse("ab|ac")
 ab = pyre.parse("ab")
 
-pyre.equal(a, b)                                   # True  — same language
-pyre.equal("a(?:b|c)", "ab|ac")                    # True  — string helper form
+pyre.isequal(a, b)                                 # True  — same language
+pyre.isequal("a(?:b|c)", "ab|ac")                  # True  — string helper form
 pyre.compile(a ^ b).isempty()                      # True  — XOR is the empty language
-pyre.subset(ab, a)                                 # True  — ab ⊆ a(?:b|c)
+pyre.issubset(ab, a)                               # True  — ab ⊆ a(?:b|c)
+pyre.isdisjoint("a.", ".b")                        # False — both match ab
 pyre.isempty("a & b")                              # True  — disjoint intersection
 ```
 
 Set-operator composition lives on parsed `Regex` values. Compiled `DFA` values
 are executable matchers, so compose expressions before compiling. Operators do
-not parse strings implicitly; helper functions such as `pyre.equal()` and
+not parse strings implicitly; helper functions such as `pyre.isequal()` and
 `pyre.isempty()` accept strings as a convenience.
 
 Composition keeps capture groups. Groups are numbered left to right when you
 compile, so `pyre.parse("(a)") | pyre.parse("(b)")` reports the same groups as
 `pyre.parse("(a)|(b)")`. Groups report only from the part of a pattern that
 matched: the excluded side of `-`, the whole of `~`, and the losing side of
-`^` never report. `pyre.equal()` and `pyre.subset()` ignore groups and compare
-languages only.
+`^` never report. `pyre.isequal()`, `pyre.issubset()` and `pyre.isdisjoint()`
+ignore groups and compare languages only.
 
 ### Operator Precedence
 

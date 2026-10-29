@@ -116,7 +116,7 @@ class TestLexer(unittest.TestCase):
         """A lexer accepts the language of all its rules together."""
         lexer = pyre.lexer(self.RULES)
 
-        self.assertTrue(pyre.equal(lexer, r'if|[0-9]+(\.[0-9]+)?|[a-z]+|\s+'))
+        self.assertTrue(pyre.isequal(lexer, r'if|[0-9]+(\.[0-9]+)?|[a-z]+|\s+'))
 
     def test_rule_identity_survives_simplification(self):
         """Rules stay apart even where their alternation would merge them."""

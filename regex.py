@@ -145,8 +145,9 @@ class Regex:
     # only sets priority, so the language is unchanged.
     #
     # Set operators keep markers, so composed patterns report the groups of
-    # whichever operand matched. pyre.equal() and pyre.subset() strip them
-    # first purely as an optimization: markers make otherwise identical terms
+    # whichever operand matched. pyre.isequal(), pyre.issubset() and
+    # pyre.isdisjoint() strip them first purely as an optimization: markers
+    # make otherwise identical terms
     # distinct, which adds DFA states and defeats the r ^ r = ∅ shortcut for
     # separately parsed copies of one pattern.
     #

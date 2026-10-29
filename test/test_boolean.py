@@ -176,11 +176,13 @@ class TestBooleanOps(RegexTestCase):
         ab = pyre.parse("ab")
 
         self.assertTrue(xor.isempty())
-        self.assertTrue(pyre.equal(a, b))
-        self.assertTrue(pyre.equal("a(b|c)", "ab|ac"))
-        self.assertTrue(pyre.equal("(a)", "a"))
-        self.assertTrue(pyre.subset("ab", "a(b|c)"))
-        self.assertTrue(pyre.subset(ab, a))
+        self.assertTrue(pyre.isequal(a, b))
+        self.assertTrue(pyre.isequal("a(b|c)", "ab|ac"))
+        self.assertTrue(pyre.isequal("(a)", "a"))
+        self.assertTrue(pyre.issubset("ab", "a(b|c)"))
+        self.assertTrue(pyre.issubset(ab, a))
+        self.assertTrue(pyre.isdisjoint("a.", "b."))
+        self.assertTrue(pyre.isdisjoint(ab, pyre.parse("ac")))
         self.assertFalse(intersection.isempty())
 
     def test_parse_allows_precompile_composition(self):
@@ -189,7 +191,7 @@ class TestBooleanOps(RegexTestCase):
         xor = pyre.compile(a ^ b)
 
         self.assertTrue(xor.isempty())
-        self.assertTrue(pyre.equal(a, b))
+        self.assertTrue(pyre.isequal(a, b))
 
     def test_dfas_are_not_operator_composable(self):
         a = pyre.compile("a(b|c)")
@@ -282,9 +284,10 @@ class TestBooleanOps(RegexTestCase):
         self.assertEqual([t[0] for t in pyre.compile(composed).lex("if")], ["KW"])
 
     def test_language_helpers_ignore_captures(self):
-        """equal() and subset() compare languages, not groups."""
-        self.assertTrue(pyre.equal(pyre.parse("(a)|(b)"), pyre.parse("a|b")))
-        self.assertTrue(pyre.subset(pyre.parse("(a)"), pyre.parse("(b)|(a)")))
+        """isequal(), issubset() and isdisjoint() compare languages, not groups."""
+        self.assertTrue(pyre.isequal(pyre.parse("(a)|(b)"), pyre.parse("a|b")))
+        self.assertTrue(pyre.issubset(pyre.parse("(a)"), pyre.parse("(b)|(a)")))
+        self.assertFalse(pyre.isdisjoint(pyre.parse("(a)"), pyre.parse("(b)|(a)")))
 
     def test_composition_order_is_kept_for_reversed_operands(self):
         """
@@ -328,13 +331,17 @@ class TestBooleanOps(RegexTestCase):
         self.assertFalse(pyre.isempty("a"))
         self.assertFalse(pyre.isempty(pyre.compile("a|b")))
 
-    def test_equal_subset_false_cases(self):
-        self.assertFalse(pyre.equal("a", "b"))
-        self.assertFalse(pyre.equal(pyre.parse("a"), pyre.parse("b")))
+    def test_language_helpers_false_cases(self):
+        self.assertFalse(pyre.isequal("a", "b"))
+        self.assertFalse(pyre.isequal(pyre.parse("a"), pyre.parse("b")))
 
         # Superset is not a subset of its strict subset
-        self.assertFalse(pyre.subset("a(b|c)", "ab"))
-        self.assertFalse(pyre.subset(pyre.parse("a(b|c)"), pyre.parse("ab")))
+        self.assertFalse(pyre.issubset("a(b|c)", "ab"))
+        self.assertFalse(pyre.issubset(pyre.parse("a(b|c)"), pyre.parse("ab")))
+
+        # Overlapping languages share a string
+        self.assertFalse(pyre.isdisjoint("a.", ".b"))
+        self.assertFalse(pyre.isdisjoint("a*", "b*"))
 
 class TestDifferenceChains(RegexTestCase):
     """

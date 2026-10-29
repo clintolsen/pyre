@@ -54,7 +54,7 @@ class TestCharacters(unittest.TestCase):
         for pattern in ['[α-ω]', '[^a]', 'é', '[a-c\\]]']:
             with self.subTest(pattern=pattern):
                 printed = str(pyre.parse(pattern))
-                self.assertTrue(pyre.equal(printed, pattern), printed)
+                self.assertTrue(pyre.isequal(printed, pattern), printed)
         self.assertEqual(str(pyre.parse('[α-ω]')), '[α-ω]')
         self.assertEqual(str(pyre.parse('[^a]')), '[^a]')
 
@@ -102,7 +102,7 @@ class TestEscapes(unittest.TestCase):
             with self.subTest(ch=ch):
                 printed = str(pyre.parse(ch))
                 self.assertTrue(printed.isascii(), printed)
-                self.assertTrue(pyre.equal(printed, ch), printed)
+                self.assertTrue(pyre.isequal(printed, ch), printed)
 
 
 class TestComplement(unittest.TestCase):
@@ -134,9 +134,9 @@ class TestComplement(unittest.TestCase):
         self.assertEqual(len(pyre.compile('~.+').states), 2)
 
     def test_set_operators(self):
-        self.assertTrue(pyre.equal('~~é', 'é'))
-        self.assertTrue(pyre.equal('.-a', '[^a]'))
-        self.assertTrue(pyre.subset('[α-ω]', '~[a-z]'))
+        self.assertTrue(pyre.isequal('~~é', 'é'))
+        self.assertTrue(pyre.isequal('.-a', '[^a]'))
+        self.assertTrue(pyre.issubset('[α-ω]', '~[a-z]'))
 
 
 class TestOffsets(unittest.TestCase):

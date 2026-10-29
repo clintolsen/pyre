@@ -84,11 +84,14 @@ def isempty(pattern: Pattern) -> bool:
 def _without_captures(pattern: Pattern) -> Regex:
     return _to_regex(pattern)._without_captures()
 
-def equal(a: Pattern, b: Pattern) -> bool:
+def isequal(a: Pattern, b: Pattern) -> bool:
     return _compile_dfa(_without_captures(a) ^ _without_captures(b)).isempty()
 
-def subset(a: Pattern, b: Pattern) -> bool:
+def issubset(a: Pattern, b: Pattern) -> bool:
     return _compile_dfa(_without_captures(a) - _without_captures(b)).isempty()
+
+def isdisjoint(a: Pattern, b: Pattern) -> bool:
+    return _compile_dfa(_without_captures(a) & _without_captures(b)).isempty()
 
 __all__ = [
     'parse',
@@ -98,8 +101,9 @@ __all__ = [
     'fullmatch',
     'search',
     'isempty',
-    'equal',
-    'subset',
+    'isequal',
+    'issubset',
+    'isdisjoint',
     'PatternError',
     'LexError',
     'Token',

@@ -80,7 +80,7 @@ class TestPrinting(unittest.TestCase):
                         '(?:a*)?', r'a\$']:
             with self.subTest(pattern=pattern):
                 printed = str(pyre.parse(pattern)).replace('·', '')
-                self.assertTrue(pyre.equal(printed, pattern), printed)
+                self.assertTrue(pyre.isequal(printed, pattern), printed)
 
 
 class TestWhitespace(unittest.TestCase):
