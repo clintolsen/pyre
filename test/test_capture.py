@@ -217,6 +217,18 @@ class TestCaptureGroups(RegexTestCase):
             ("(a)(b){0}(c)", "ac"),
             ("(?:(a){0}|(x))(b)", "xb"),
             ("(?:.*|(a))(b)", "xb"),
+            # An empty match outranks later alternatives, so what follows
+            # takes the character first
+            ("(a?|b)(b?)", "b"),
+            ("(a?|b)(b?)(c?)", "bc"),
+            ("(?:x|(a?)|b)(b?)", "b"),
+            ("(a?|b)?(b?)", "b"),
+            ("(a?|b)*(b?)", "b"),
+            ("(a?|b)+(b?)", "b"),
+            ("(a?|b){2}(b?)", "b"),
+            ("(a?|b){0,2}(b?)", "b"),
+            ("(a|a{0})(a?)", "a"),
+            ("(a|b?)*(b)", "bb"),
         ]
         for pattern, text in cases:
             with self.subTest(pattern=pattern, text=text):

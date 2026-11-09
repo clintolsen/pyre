@@ -159,19 +159,56 @@ def derive_branches(expr, ch):
     markers is the tuple of markers crossed before consuming ch on that
     branch, and term is what remains of that branch afterward.
     """
+    return [branch for branch in _branches(expr, ch) if branch[1] is not None]
+
+
+def _branches(expr, ch):
+    """
+    The branches of derive_branches(), plus at most one exit (markers, None)
+    where expr may stop without consuming ch, placed at its priority among
+    the branches. markers on the exit are those of nullable_markers(expr).
+
+    The exit's place matters when something follows expr: in (a?|b)(b?) the
+    empty a? outranks the b alternative, so on "b" the following (b?) must
+    take the character before (a?|b) does, as re would.
+    """
     try:
         return expr._branches[ch]
     except KeyError:
         pass
 
-    result = [(m, t) for m, t in _derive_branches(expr, ch) if not t.isempty]
+    result = []
+    exited = False
+    for markers, term in _derive_branches(expr, ch):
+        if term is None:
+            # A later exit reaches the same continuation with lower priority
+            #
+            if exited:
+                continue
+            exited = True
+        elif term.isempty:
+            continue
+        result.append((markers, term))
+
     expr._branches[ch] = result
     return result
 
 
+def _exit_last(e, branches):
+    """ branches, then an exit if e is nullable """
+    markers = nullable_markers(e)
+    return branches if markers is None else branches + [(markers, None)]
+
+
 def _derive_branches(e, ch):
-    if e.isempty or e.isepsilon or e.ismarker:
+    if e.isempty:
         return []
+
+    if e.isepsilon:
+        return [((), None)]
+
+    if e.ismarker:
+        return [((e,), None)]
 
     # A character's derivative is ε, or the rest of a longer character
     #
@@ -179,39 +216,44 @@ def _derive_branches(e, ch):
         return [((), e.derive(ch))]
 
     if isinstance(e, rx.RegexOr):
-        return [branch for arg in e.args for branch in derive_branches(arg, ch)]
+        return [branch for arg in e.args for branch in _branches(arg, ch)]
 
-    # Each leading nullable operand lets branches of the next one in too,
-    # after the markers its empty match crosses.
+    # Where an operand can stop, the branches of what follows it take its
+    # place, after the markers its empty match crosses
     #
     if isinstance(e, rx.RegexConcat):
+        first, rest = e.args[0], rx.RegexConcat.of(e.args[1:])
         out = []
-        skipped = ()
-        for i, arg in enumerate(e.args):
-            rest = rx.RegexConcat.of(e.args[i + 1:])
-            out += [(skipped + m, rx.RegexConcat(t, rest)) for m, t in derive_branches(arg, ch)]
-            markers = nullable_markers(arg)
-            if markers is None:
-                break
-            skipped += markers
+        for m, t in _branches(first, ch):
+            if t is not None:
+                out.append((m, rx.RegexConcat(t, rest)))
+            else:
+                out += [(m + rm, rt) for rm, rt in _branches(rest, ch)]
         return out
 
-    if isinstance(e, rx.RegexStar):
-        return [(m, rx.RegexConcat(t, e)) for m, t in derive_branches(e.expr, ch)]
-
-    if isinstance(e, rx.RegexPlus):
-        star = rx.RegexStar(e.expr)
-        return [(m, rx.RegexConcat(t, star)) for m, t in derive_branches(e.expr, ch)]
+    # An empty iteration ends the repeat where it happens, as in re, so an
+    # exit in the body stays put. Otherwise the repeat stops after every
+    # iteration that consumes, as a greedy repeat does.
+    #
+    if isinstance(e, (rx.RegexStar, rx.RegexPlus, rx.RegexRepeat)):
+        if isinstance(e, rx.RegexStar):
+            rest = e
+        elif isinstance(e, rx.RegexPlus):
+            rest = rx.RegexStar(e.expr)
+        else:
+            rest = e.rest()
+        out = [(m, t if t is None else rx.RegexConcat(t, rest))
+               for m, t in _branches(e.expr, ch)]
+        optional = isinstance(e, rx.RegexStar) or (isinstance(e, rx.RegexRepeat) and e.lo == 0)
+        if optional and all(t is not None for _, t in out):
+            out.append(((), None))
+        return out
 
     if isinstance(e, rx.RegexOpt):
-        return derive_branches(e.expr, ch)
-
-    # The first occurrence takes the character, as a greedy repeat does,
-    # and the rest follows it
-    #
-    if isinstance(e, rx.RegexRepeat):
-        rest = e.rest()
-        return [(m, rx.RegexConcat(t, rest)) for m, t in derive_branches(e.expr, ch)]
+        out = list(_branches(e.expr, ch))
+        if all(t is not None for _, t in out):
+            out.append(((), None))
+        return out
 
     if isinstance(e, rx.RegexAnd):
         out = derive_branches(e.args[0], ch)
@@ -221,26 +263,32 @@ def _derive_branches(e, ch):
                 for lm, lt in out
                 for rm, rt in derive_branches(arg, ch)
             ]
-        return out
+        return _exit_last(e, out)
 
     if isinstance(e, rx.RegexDiff):
         first, *removed = e.args
-        negated = []
-        for arg in removed:
-            negated.append(arg.derive(ch))
-        return [(m, functools.reduce(rx.RegexDiff, [t] + negated)) for m, t in derive_branches(first, ch)]
+        negated = [arg.derive(ch) for arg in removed]
+        keep_exit = not any(arg.isnullable() for arg in removed)
+        return [
+            (m, functools.reduce(rx.RegexDiff, [t] + negated) if t is not None else None)
+            for m, t in _branches(first, ch)
+            if t is not None or keep_exit
+        ]
 
     if isinstance(e, rx.RegexNot):
-        return [((), e.derive(ch))]
+        return _exit_last(e, [((), e.derive(ch))])
 
     if isinstance(e, rx.RegexXor):
         if not e.hascaptures:
-            return [((), e.derive(ch))]
+            return _exit_last(e, [((), e.derive(ch))])
         # Either side's branches, with the other side removed
         #
         left, right = e.args
-        out = [(m, rx.RegexDiff(t, right.derive(ch))) for m, t in derive_branches(left, ch)]
-        return out + [(m, rx.RegexDiff(t, left.derive(ch))) for m, t in derive_branches(right, ch)]
+        left_ok, right_ok = left.isnullable(), right.isnullable()
+        out = [(m, rx.RegexDiff(t, right.derive(ch)) if t is not None else None)
+               for m, t in _branches(left, ch) if t is not None or not right_ok]
+        return out + [(m, rx.RegexDiff(t, left.derive(ch)) if t is not None else None)
+                      for m, t in _branches(right, ch) if t is not None or not left_ok]
 
     raise TypeError(f'derive_branches: unsupported node {type(e).__name__}')
 
@@ -312,8 +360,8 @@ def captures(expr, text, start, end, numbers):
         advanced = []
 
         for term, caps in threads:
-            for markers, nxt in derive_branches(term, ch):
-                if nxt in seen:
+            for markers, nxt in _branches(term, ch):
+                if nxt is None or nxt in seen:
                     continue
                 seen.add(nxt)
                 advanced.append((nxt, caps.apply(markers, index)))

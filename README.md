@@ -129,7 +129,8 @@ complement   = pyre.compile(~a)
 
 `match()` and `search()` take the longest match, where `re` takes the first
 alternative that matches, so `search("a|ab", "ab")` matches all of `ab`. Groups
-come from the first alternative that gives that match.
+come from the first alternative that gives that match; see
+[Capture Groups](#capture-groups).
 
 A pattern that can match the empty string reports empty matches, as in `re`:
 `match("a*", "b")` matches the empty string at 0. With `all=True`, each search
@@ -137,6 +138,43 @@ starts where the last match ended, and after an empty match the next one can't
 be empty at the same place, so `search("a*", "baa", all=True)` finds `(0, 0)`,
 `(1, 3)` and `(3, 3)`. Empty matches fall only between characters, never inside
 one's UTF-8 bytes. `lex()` never makes an empty token.
+
+### Capture Groups
+
+Pyre picks the matched text first and the groups second. The text is the
+longest match, as above. The groups are those Python's `re` reports for that
+same text, given the same meaning for the pattern. Pyre patterns are always
+verbose, `.` matches a newline, and `\d`, `\w` and `\s` are ASCII only, so the
+comparison is with `re.fullmatch(pattern, text[start:end], re.VERBOSE |
+re.DOTALL | re.ASCII)`, for patterns written in syntax the two share. That
+call numbers positions from `start`, so add `start` to each of its spans to
+get pyre's. The test suite compares pyre's groups with `re`'s on such
+patterns. In particular:
+
+- Alternatives are tried in the order written, and the first one that lets
+  the rest of the pattern match wins, even when it matches less or nothing.
+  `fullmatch("(a|ab)(b?)", "ab")` gives group 1 `a` and group 2 `b`, and
+  `fullmatch("(a?|b)(b?)", "b")` gives group 1 the empty string at 0 and
+  group 2 `b`, since `a?` matching nothing comes before trying `b`.
+- Repeats are greedy: each iteration takes as much as it can while the rest
+  of the pattern still matches.
+- A group in a repeat reports its last iteration. When the body can match
+  the empty string and the repeat's upper bound leaves room for another
+  iteration, the repeat takes one more, empty, iteration at the end, so
+  `fullmatch("(a*)*", "aa")` reports group 1 as `(2, 2)`. `(a?){2}` on `aa`
+  has used both its iterations on the two `a`s, so it reports `(1, 2)`.
+- A group that took part in an earlier iteration but not the last keeps its
+  earlier span, so `fullmatch("((a)|(b))*", "ab")` still reports group 2 as
+  `(0, 1)`.
+
+This is the leftmost-first rule of Perl, Python and RE2, not the POSIX rule
+where each group in turn takes the longest text it can. Under POSIX,
+`(a|ab)(b?)` on `ab` would give group 1 `ab` and group 2 the empty string.
+Choosing the longest overall match and then leftmost-first groups within it is
+also what Go's `regexp.CompilePOSIX` does.
+
+`re` has no set operators, so groups inside them follow their own rule; see
+[Powerful Set Operators](#powerful-set-operators).
 
 ---
 
@@ -376,7 +414,8 @@ class. Beyond the grammar, a pattern and a group can't be empty, `{m,n}` needs
 - `&`, `~` and `ε` have meanings of their own; escape them to match them.
 - Patterns are always verbose, so whitespace and `#` need escaping.
 - The longest match wins, not the first alternative that matches: `a|ab`
-  matches all of `ab`.
+  matches all of `ab`. Groups within that match follow `re`; see
+  [Capture Groups](#capture-groups).
 
 Where `re` gives syntax a meaning pyre doesn't support, pyre rejects it rather
 than reading it another way:
