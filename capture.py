@@ -219,16 +219,34 @@ def _derive_branches(e, ch):
         return [branch for arg in e.args for branch in _branches(arg, ch)]
 
     # Where an operand can stop, the branches of what follows it take its
-    # place, after the markers its empty match crosses
+    # place, after the markers its empty match crosses. Only operands up to
+    # the first that can't stop matter. Building from the last of those
+    # back to the first keeps the stack flat however many operands there
+    # are.
     #
     if isinstance(e, rx.RegexConcat):
-        first, rest = e.args[0], rx.RegexConcat.of(e.args[1:])
-        out = []
-        for m, t in _branches(first, ch):
-            if t is not None:
-                out.append((m, rx.RegexConcat(t, rest)))
-            else:
-                out += [(m + rm, rt) for rm, rt in _branches(rest, ch)]
+        args = e.args
+        lists = []
+        for arg in args:
+            branches = _branches(arg, ch)
+            lists.append(branches)
+            if all(t is not None for _, t in branches):
+                break
+
+        out = None
+        for i in range(len(lists) - 1, -1, -1):
+            rest = rx.RegexConcat.of(args[i + 1:])
+            here = []
+            for m, t in lists[i]:
+                if t is not None:
+                    here.append((m, rx.RegexConcat(t, rest)))
+                elif out is None:
+                    # The last operand can stop, so the whole of e can
+                    #
+                    here.append((m, None))
+                else:
+                    here += [(m + rm, rt) for rm, rt in out]
+            out = here
         return out
 
     # An empty iteration ends the repeat where it happens, as in re, so an

@@ -231,5 +231,13 @@ class TestLongPatterns(RegexTestCase):
         self.assertEqual(result[600], [(599, 600)])
         self.assertEqual(len(result), 601)
 
+    def test_many_empty_groups(self):
+        # Every group matches empty, so the first character's branches
+        # pass through all of them
+        pat = "(ε)" * 600 + "b"
+        result = pyre.fullmatch(pat, "b")
+        self.assertEqual(result[600], [(0, 0)])
+        self.assertEqual(len(result), 601)
+
 if __name__ == "__main__":
     unittest.main()
